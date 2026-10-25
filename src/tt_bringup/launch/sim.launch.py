@@ -4,7 +4,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             IncludeLaunchDescription, RegisterEventHandler,
-                            SetEnvironmentVariable)
+                            SetEnvironmentVariable, Shutdown)
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -66,6 +66,7 @@ def generate_launch_description():
     rviz_node = Node(
         package='rviz2', executable='rviz2', output='screen',
         condition=IfCondition(rviz),
+        on_exit=Shutdown(),  # closing the RViz2 window stops the whole simulation
         arguments=['-d', os.path.join(
             get_package_share_directory('tt_bringup'), 'rviz', 'tt.rviz')],
         parameters=[{'use_sim_time': True}])

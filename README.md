@@ -27,3 +27,7 @@ ros2 launch tt_bringup sim.launch.py
 | `rviz` | `true` | RViz2 화면 (로봇, 탁구대, 공) |
 | `cameras` | `false` | RGB 카메라 2대 (120 Hz). 켜면 RTF가 크게 떨어짐 |
 | `gz_args` | `-r -s --render-engine ogre` | Gazebo 인자. GUI가 필요하면 `gz_args:="-r --render-engine ogre"` |
+
+### 종료와 정리
+- 정상 종료: 실행 터미널에서 `Ctrl+C` **한 번**만 누르고 5초쯤 기다리거나, RViz2 창을 닫는다 (창을 닫으면 전체가 같이 종료됨).
+- 잔여 프로세스 정리: `~/tt_ws/tools/kill_sim.sh` (`clean: ...`이 나오면 정상)
