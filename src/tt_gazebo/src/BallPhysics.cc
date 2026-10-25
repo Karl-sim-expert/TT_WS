@@ -119,23 +119,40 @@ public:
     }
 
     // Table bounce (analytic): ball surface reaches the table plane while moving down.
-    if (info.simTime >= this->cooldownUntil && dt > 0.0 &&
-      this->table.contains(pose->Pos().X(), pose->Pos().Y()) &&
-      pose->Pos().Z() - this->params.radius <= this->table.top_z && v.z < 0.0 &&
-      pose->Pos().Z() > this->table.top_z - 0.5 * this->params.radius)
-    {
-      const Vec3 v0 = v;
-      const Vec3 w0 = w;
-      table_bounce(this->params, v, w);
-      this->ApplyVelocityChange(
-        ecm, dt, Vec3{v.x - v0.x, v.y - v0.y, v.z - v0.z},
-        Vec3{w.x - w0.x, w.y - w0.y, w.z - w0.z});
-      this->cooldownUntil = info.simTime + std::chrono::milliseconds(20);
-      if (this->debug) {
-        ignmsg << "[BallPhysics] BOUNCE at z=" << pose->Pos().Z() << " v " << v0.z << " -> "
-               << v.z << " (vx " << v0.x << " -> " << v.x << ")" << std::endl;
+    // Slow impacts are treated as resting contact (no bounce, ball held on the surface), so
+    // the ball cannot sink once the bounces die out.
+    const bool onTable = this->table.contains(pose->Pos().X(), pose->Pos().Y()) &&
+      pose->Pos().Z() - this->params.radius <= this->table.top_z &&
+      pose->Pos().Z() > this->table.top_z - 0.5 * this->params.radius;
+    if (dt > 0.0 && onTable && v.z < 0.0) {
+      const bool resting = -v.z < 0.5;
+      if (resting || info.simTime >= this->cooldownUntil) {
+        const Vec3 v0 = v;
+        const Vec3 w0 = w;
+        if (resting) {
+          BallParams p = this->params;
+          p.restitution = 0.0;
+          table_bounce(p, v, w);
+          v.z = 0.0;
+        } else {
+          table_bounce(this->params, v, w);
+          this->cooldownUntil = info.simTime + std::chrono::milliseconds(20);
+        }
+        this->ApplyVelocityChange(
+          ecm, dt, Vec3{v.x - v0.x, v.y - v0.y, v.z - v0.z},
+          Vec3{w.x - w0.x, w.y - w0.y, w.z - w0.z});
+        // Lift the ball back onto the surface if it has sunk in.
+        if (pose->Pos().Z() < this->table.top_z + this->params.radius) {
+          auto fixed = *pose;
+          fixed.Pos().Z() = this->table.top_z + this->params.radius;
+          this->model.SetWorldPoseCmd(ecm, fixed);
+        }
+        if (this->debug && !resting) {
+          ignmsg << "[BallPhysics] BOUNCE at z=" << pose->Pos().Z() << " v " << v0.z << " -> "
+                 << v.z << " (vx " << v0.x << " -> " << v.x << ")" << std::endl;
+        }
+        return;
       }
-      return;
     }
 
     const Vec3 f = aerodynamic_force(this->params, v, w);
