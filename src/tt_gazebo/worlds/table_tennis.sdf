@@ -10,7 +10,7 @@
     <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
     <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
     <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
-    <!-- Fortress plugin names (ignition-gazebo-*). ogre2 crashes on WSLg (GL3Plus texture copy), so use ogre. Pass --render-engine ogre to the GUI as well. -->
+    <!-- Fortress plugin names (ignition-gazebo-*). ogre2 crashes on WSLg (GL3Plus texture copy), so use ogre. Also pass the render-engine option "ogre" to the GUI (see tt_bringup launch). -->
     <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
       <render_engine>ogre</render_engine>
     </plugin>
@@ -70,40 +70,6 @@
       </link>
     </model>
 
-    <model name="camera_a_rig">
-      <static>true</static>
-      <pose>-2.5 0.4 1.4 0 0.12 0</pose>
-      <link name="link">
-      <sensor name="camera_a" type="camera">
-        <pose>0 0 0 0 0 0</pose>
-        <topic>camera_a/image_raw</topic>
-        <update_rate>120</update_rate>
-        <always_on>true</always_on>
-        <camera>
-          <horizontal_fov>1.2</horizontal_fov>
-          <image><width>640</width><height>480</height><format>R8G8B8</format></image>
-          <clip><near>0.1</near><far>15</far></clip>
-        </camera>
-      </sensor>
-      </link>
-    </model>
 
-    <model name="camera_b_rig">
-      <static>true</static>
-      <pose>-2.5 -0.4 1.4 0 0.12 0</pose>
-      <link name="link">
-      <sensor name="camera_b" type="camera">
-        <pose>0 0 0 0 0 0</pose>
-        <topic>camera_b/image_raw</topic>
-        <update_rate>120</update_rate>
-        <always_on>true</always_on>
-        <camera>
-          <horizontal_fov>1.2</horizontal_fov>
-          <image><width>640</width><height>480</height><format>R8G8B8</format></image>
-          <clip><near>0.1</near><far>15</far></clip>
-        </camera>
-      </sensor>
-      </link>
-    </model>
   </world>
 </sdf>

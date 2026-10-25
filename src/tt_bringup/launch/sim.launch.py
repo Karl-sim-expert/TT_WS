@@ -5,6 +5,7 @@ from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             IncludeLaunchDescription, RegisterEventHandler,
                             SetEnvironmentVariable)
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
@@ -26,6 +27,7 @@ def generate_launch_description():
     # gz_args: '-r' starts running; add '-s' for server-only (no GUI) runs.
     # ogre2 crashes under WSLg, so default to the ogre (1.x) render engine.
     gz_args = LaunchConfiguration('gz_args')
+    cameras = LaunchConfiguration('cameras')
 
     robot_description = {'robot_description': ParameterValue(Command([
         FindExecutable(name='xacro'), ' ',
@@ -53,11 +55,21 @@ def generate_launch_description():
 
     bridge = Node(
         package='ros_gz_bridge', executable='parameter_bridge', output='screen',
-        arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            '/camera_a/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/camera_b/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
-        ])
+        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'])
+
+    # Cameras are opt-in (cameras:=true): two 120 Hz cameras are expensive to render.
+    camera_nodes = []
+    for name, y in (('camera_a', '0.4'), ('camera_b', '-0.4')):
+        camera_nodes.append(Node(
+            package='ros_gz_sim', executable='create', output='screen',
+            condition=IfCondition(cameras),
+            arguments=['-file', os.path.join(gazebo_share, 'models', name, 'model.sdf'),
+                       '-name', name + '_rig', '-x', '-2.5', '-y', y, '-z', '1.4',
+                       '-P', '0.12']))
+        camera_nodes.append(Node(
+            package='ros_gz_bridge', executable='parameter_bridge', output='screen',
+            condition=IfCondition(cameras),
+            arguments=[f'/{name}/image_raw@sensor_msgs/msg/Image[gz.msgs.Image']))
 
     load_jsb = Node(
         package='controller_manager', executable='spawner', output='screen',
@@ -68,6 +80,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('gz_args', default_value='-r --render-engine ogre'),
+        DeclareLaunchArgument('cameras', default_value='false'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
         gz_sim,
@@ -75,6 +88,7 @@ def generate_launch_description():
         spawn_robot,
         spawn_ball,
         bridge,
+        *camera_nodes,
         RegisterEventHandler(OnProcessExit(
             target_action=spawn_robot, on_exit=[load_jsb])),
         RegisterEventHandler(OnProcessExit(
