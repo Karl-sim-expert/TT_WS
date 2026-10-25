@@ -327,6 +327,12 @@ private:
         return;
       }
     }
+    if (!this->paddleChecksEnabled) {
+      // Creates the link's WorldPose (and velocity) components, as for the ball link; they are
+      // filled from the next step on.
+      ignition::gazebo::Link(this->paddleLink).EnableVelocityChecks(ecm, true);
+      this->paddleChecksEnabled = true;
+    }
     auto linkPose = ignition::gazebo::Link(this->paddleLink).WorldPose(ecm);
     if (!linkPose) {
       this->paddleStatus = "paddle link found but WorldPose() has no value";
@@ -405,6 +411,7 @@ private:
   bool paddleValid{false};
   bool paddleViaLink7{false};
   bool paddleGaveUp{false};
+  bool paddleChecksEnabled{false};
   std::string paddleStatus{"not looked up yet"};
   bool havePrevPaddle{false};
   ignition::math::Pose3d prevPaddle;
