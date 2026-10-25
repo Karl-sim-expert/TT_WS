@@ -3,10 +3,13 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
-                            RegisterEventHandler, SetEnvironmentVariable)
+                            IncludeLaunchDescription, RegisterEventHandler,
+                            SetEnvironmentVariable)
 from launch.event_handlers import OnProcessExit
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -17,13 +20,16 @@ def generate_launch_description():
     # gz_args: '-r' starts running; add '-s' for server-only (no GUI) runs.
     gz_args = LaunchConfiguration('gz_args')
 
-    robot_description = {'robot_description': Command([
+    robot_description = {'robot_description': ParameterValue(Command([
         FindExecutable(name='xacro'), ' ',
         os.path.join(description_share, 'urdf', 'tt_robot.urdf.xacro'),
-    ])}
+    ]), value_type=str)}
 
-    gz_sim = ExecuteProcess(
-        cmd=['gz', 'sim', world, gz_args], output='screen')
+    # ros_gz_sim picks the right executable (Fortress: `ign gazebo`, newer: `gz sim`).
+    gz_sim = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
+        launch_arguments=[('gz_args', [world, ' ', gz_args])])
 
     robot_state_publisher = Node(
         package='robot_state_publisher', executable='robot_state_publisher',
@@ -57,6 +63,8 @@ def generate_launch_description():
         DeclareLaunchArgument('gz_args', default_value='-r'),
         SetEnvironmentVariable(
             'GZ_SIM_RESOURCE_PATH', os.path.join(gazebo_share, 'models')),
+        SetEnvironmentVariable(
+            'IGN_GAZEBO_RESOURCE_PATH', os.path.join(gazebo_share, 'models')),
         gz_sim,
         robot_state_publisher,
         spawn_robot,
