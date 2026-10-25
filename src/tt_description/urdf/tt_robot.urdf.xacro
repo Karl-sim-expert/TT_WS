@@ -1,15 +1,34 @@
 <?xml version="1.0"?>
 <!-- Panda arm + paddle, ros2_control (gz_ros2_control, Gazebo Fortress). -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tt_robot">
-  <xacro:arg name="base_x" default="1.9"/>
+  <xacro:arg name="base_x" default="1.7"/>
   <xacro:arg name="base_y" default="0.0"/>
-  <xacro:arg name="base_z" default="0.0"/>
+  <!-- base_z = table top height: the arm sits on a pedestal next to the table end. -->
+  <xacro:arg name="base_z" default="0.76"/>
   <xacro:arg name="base_yaw" default="3.14159265359"/>
   <xacro:arg name="controllers" default="$(find tt_description)/config/controllers.yaml"/>
 
   <xacro:include filename="$(find tt_description)/urdf/panda_arm.urdf"/>
 
   <link name="world"/>
+
+  <!-- Pedestal (floor to base_z) so the arm works at table height. -->
+  <link name="pedestal">
+    <visual>
+      <origin xyz="0 0 ${0.5 * $(arg base_z)}"/>
+      <geometry><box size="0.4 0.4 $(arg base_z)"/></geometry>
+      <material name="pedestal_grey"><color rgba="0.35 0.35 0.35 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${0.5 * $(arg base_z)}"/>
+      <geometry><box size="0.4 0.4 $(arg base_z)"/></geometry>
+    </collision>
+  </link>
+  <joint name="world_to_pedestal" type="fixed">
+    <parent link="world"/>
+    <child link="pedestal"/>
+    <origin xyz="$(arg base_x) $(arg base_y) 0" rpy="0 0 0"/>
+  </joint>
   <joint name="world_to_base" type="fixed">
     <parent link="world"/>
     <child link="panda_link0"/>
