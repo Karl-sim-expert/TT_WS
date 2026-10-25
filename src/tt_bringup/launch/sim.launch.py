@@ -17,7 +17,14 @@ def generate_launch_description():
     description_share = get_package_share_directory('tt_description')
     world = os.path.join(gazebo_share, 'worlds', 'table_tennis.sdf')
 
+    # Parent dir of the Panda description share dir: lets Gazebo resolve the
+    # model://moveit_resources_panda_description/... mesh URIs.
+    panda_parent = os.path.dirname(
+        get_package_share_directory('moveit_resources_panda_description'))
+    resource_path = os.pathsep.join([os.path.join(gazebo_share, 'models'), panda_parent])
+
     # gz_args: '-r' starts running; add '-s' for server-only (no GUI) runs.
+    # ogre2 crashes under WSLg, so default to the ogre (1.x) render engine.
     gz_args = LaunchConfiguration('gz_args')
 
     robot_description = {'robot_description': ParameterValue(Command([
@@ -60,11 +67,9 @@ def generate_launch_description():
              'panda_arm_controller'], output='screen')
 
     return LaunchDescription([
-        DeclareLaunchArgument('gz_args', default_value='-r'),
-        SetEnvironmentVariable(
-            'GZ_SIM_RESOURCE_PATH', os.path.join(gazebo_share, 'models')),
-        SetEnvironmentVariable(
-            'IGN_GAZEBO_RESOURCE_PATH', os.path.join(gazebo_share, 'models')),
+        DeclareLaunchArgument('gz_args', default_value='-r --render-engine ogre'),
+        SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
+        SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
         gz_sim,
         robot_state_publisher,
         spawn_robot,

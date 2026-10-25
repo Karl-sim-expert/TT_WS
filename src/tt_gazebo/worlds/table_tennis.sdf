@@ -10,9 +10,9 @@
     <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
     <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
     <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
-    <!-- Fortress plugin names (ignition-gazebo-*). If the WSLg GUI/camera rendering is unstable, try ogre instead of ogre2. -->
+    <!-- Fortress plugin names (ignition-gazebo-*). ogre2 crashes on WSLg (GL3Plus texture copy), so use ogre. Pass --render-engine ogre to the GUI as well. -->
     <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
-      <render_engine>ogre2</render_engine>
+      <render_engine>ogre</render_engine>
     </plugin>
 
     <gravity>0 0 -9.81</gravity>
