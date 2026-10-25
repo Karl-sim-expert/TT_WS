@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<!-- Panda arm + paddle, ros2_control (gz_ros2_control, Gazebo Fortress). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tt_robot">
+  <xacro:arg name="base_x" default="1.9"/>
+  <xacro:arg name="base_y" default="0.0"/>
+  <xacro:arg name="base_z" default="0.0"/>
+  <xacro:arg name="base_yaw" default="3.14159265359"/>
+  <xacro:arg name="controllers" default="$(find tt_description)/config/controllers.yaml"/>
+
+  <xacro:include filename="$(find tt_description)/urdf/panda_arm.urdf"/>
+
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="panda_link0"/>
+    <origin xyz="$(arg base_x) $(arg base_y) $(arg base_z)" rpy="0 0 $(arg base_yaw)"/>
+  </joint>
+
+  <!-- Paddle: disc of 150 mm diameter, 12 mm thick (collision >= 10 mm to limit tunneling).
+       Face normal = panda_hand +x. TODO: tune pose/size once the stroke planner exists. -->
+  <link name="paddle">
+    <inertial>
+      <mass value="0.15"/>
+      <inertia ixx="3.5e-4" ixy="0" ixz="0" iyy="3.5e-4" iyz="0" izz="4.2e-4"/>
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="0.075" length="0.012"/></geometry>
+      <material name="paddle_red"><color rgba="0.8 0.1 0.1 1"/></material>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.075" length="0.012"/></geometry>
+    </collision>
+  </link>
+  <joint name="paddle_joint" type="fixed">
+    <parent link="panda_hand"/>
+    <child link="paddle"/>
+    <origin xyz="0 0 0.13" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <ros2_control name="GazeboSimSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <xacro:macro name="arm_joint" params="name initial">
+      <joint name="${name}">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <xacro:arm_joint name="panda_joint1" initial="0.0"/>
+    <xacro:arm_joint name="panda_joint2" initial="-0.5"/>
+    <xacro:arm_joint name="panda_joint3" initial="0.0"/>
+    <xacro:arm_joint name="panda_joint4" initial="-2.0"/>
+    <xacro:arm_joint name="panda_joint5" initial="0.0"/>
+    <xacro:arm_joint name="panda_joint6" initial="1.57"/>
+    <xacro:arm_joint name="panda_joint7" initial="0.785"/>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg controllers)</parameters>
+    </plugin>
+  </gazebo>
+</robot>
