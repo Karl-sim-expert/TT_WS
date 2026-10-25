@@ -1,6 +1,6 @@
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             IncludeLaunchDescription, RegisterEventHandler,
@@ -18,6 +18,8 @@ def generate_launch_description():
     description_share = get_package_share_directory('tt_description')
     world = os.path.join(gazebo_share, 'worlds', 'table_tennis.sdf')
 
+    plugin_path = os.path.join(get_package_prefix('tt_gazebo'), 'lib', 'tt_gazebo')
+
     # Parent dir of the Panda description share dir: lets Gazebo resolve the
     # model://moveit_resources_panda_description/... mesh URIs.
     panda_parent = os.path.dirname(
@@ -30,6 +32,8 @@ def generate_launch_description():
     gz_args = LaunchConfiguration('gz_args')
     cameras = LaunchConfiguration('cameras')
     rviz = LaunchConfiguration('rviz')
+    machine_args = ('speed', 'spin_max', 'x_min', 'miss_percent', 'period')
+    machine_cfg = {n: LaunchConfiguration(f'machine_{n}') for n in machine_args}
 
     robot_description = {'robot_description': ParameterValue(Command([
         FindExecutable(name='xacro'), ' ',
@@ -60,6 +64,7 @@ def generate_launch_description():
         arguments=[
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/model/ball/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/ball/launch@geometry_msgs/msg/Twist]gz.msgs.Twist',
         ])
 
     # Lightweight viewer (default on): rviz:=false to disable.
@@ -73,6 +78,13 @@ def generate_launch_description():
     scene_markers = Node(
         package='tt_bringup', executable='scene_markers.py', output='screen',
         condition=IfCondition(rviz), parameters=[{'use_sim_time': True}])
+
+    # Ball machine (opt-in, ball_machine:=true): fires at a random landing point every `period` s.
+    ball_machine = Node(
+        package='tt_bringup', executable='ball_machine.py', output='screen',
+        condition=IfCondition(LaunchConfiguration('ball_machine')),
+        parameters=[{n: ParameterValue(c, value_type=float) for n, c in machine_cfg.items()},
+                    {'use_sim_time': True}])
 
     # Cameras are opt-in (cameras:=true): two 120 Hz cameras are expensive to render.
     camera_nodes = []
@@ -99,8 +111,16 @@ def generate_launch_description():
         DeclareLaunchArgument('gz_args', default_value='-r -s --render-engine ogre'),
         DeclareLaunchArgument('cameras', default_value='false'),
         DeclareLaunchArgument('rviz', default_value='true'),
+        DeclareLaunchArgument('ball_machine', default_value='false'),
+        DeclareLaunchArgument('machine_speed', default_value='9.0'),
+        DeclareLaunchArgument('machine_spin_max', default_value='200.0'),
+        DeclareLaunchArgument('machine_x_min', default_value='0.6'),
+        DeclareLaunchArgument('machine_miss_percent', default_value='0.0'),
+        DeclareLaunchArgument('machine_period', default_value='2.5'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
+        SetEnvironmentVariable('IGN_GAZEBO_SYSTEM_PLUGIN_PATH', plugin_path),
+        SetEnvironmentVariable('GZ_SIM_SYSTEM_PLUGIN_PATH', plugin_path),
         gz_sim,
         robot_state_publisher,
         spawn_robot,
@@ -108,6 +128,7 @@ def generate_launch_description():
         bridge,
         *camera_nodes,
         rviz_node,
+        ball_machine,
         scene_markers,
         RegisterEventHandler(OnProcessExit(
             target_action=spawn_robot, on_exit=[load_jsb])),
