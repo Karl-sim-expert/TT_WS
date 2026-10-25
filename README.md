@@ -2,6 +2,8 @@
 
 ROS 2 Humble 기반 탁구 로봇 워크스페이스 (Franka Panda, Gazebo 시뮬레이션 전용).
 
+진행 상황: M0(환경) 완료, M1(탁구대·공 물리, 볼머신) 완료. 다음은 M2(팔 제어, 정지한 공 때리기).
+
 ```bash
 cd ~/tt_ws
 source /opt/ros/humble/setup.bash
