@@ -3,8 +3,12 @@ project(tt_bringup)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch
+install(DIRECTORY launch rviz
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(PROGRAMS scripts/scene_markers.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()

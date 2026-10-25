@@ -20,3 +20,10 @@ colcon build --symlink-install && source install/setup.bash
 ros2 launch tt_bringup sim.launch.py            # GUI 포함
 ros2 launch tt_bringup sim.launch.py gz_args:="-r -s --render-engine ogre"   # 서버만
 ```
+
+### 가벼운 화면 (RViz2)
+Gazebo 창 대신 RViz2로 로봇·탁구대·공을 본다 (Gazebo는 GUI 없이 서버만):
+```bash
+sudo apt install ros-humble-rviz2
+ros2 launch tt_bringup sim.launch.py gz_args:="-r -s --render-engine ogre" rviz:=true
+```

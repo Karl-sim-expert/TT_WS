@@ -28,6 +28,7 @@ def generate_launch_description():
     # ogre2 crashes under WSLg, so default to the ogre (1.x) render engine.
     gz_args = LaunchConfiguration('gz_args')
     cameras = LaunchConfiguration('cameras')
+    rviz = LaunchConfiguration('rviz')
 
     robot_description = {'robot_description': ParameterValue(Command([
         FindExecutable(name='xacro'), ' ',
@@ -55,7 +56,22 @@ def generate_launch_description():
 
     bridge = Node(
         package='ros_gz_bridge', executable='parameter_bridge', output='screen',
-        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'])
+        arguments=[
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+            '/model/ball/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+        ])
+
+    # Lightweight viewer: rviz:=true (pair with gz_args:="-r -s --render-engine ogre"
+    # to run Gazebo without its GUI).
+    rviz_node = Node(
+        package='rviz2', executable='rviz2', output='screen',
+        condition=IfCondition(rviz),
+        arguments=['-d', os.path.join(
+            get_package_share_directory('tt_bringup'), 'rviz', 'tt.rviz')],
+        parameters=[{'use_sim_time': True}])
+    scene_markers = Node(
+        package='tt_bringup', executable='scene_markers.py', output='screen',
+        condition=IfCondition(rviz), parameters=[{'use_sim_time': True}])
 
     # Cameras are opt-in (cameras:=true): two 120 Hz cameras are expensive to render.
     camera_nodes = []
@@ -81,6 +97,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('gz_args', default_value='-r --render-engine ogre'),
         DeclareLaunchArgument('cameras', default_value='false'),
+        DeclareLaunchArgument('rviz', default_value='false'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
         gz_sim,
@@ -89,6 +106,8 @@ def generate_launch_description():
         spawn_ball,
         bridge,
         *camera_nodes,
+        rviz_node,
+        scene_markers,
         RegisterEventHandler(OnProcessExit(
             target_action=spawn_robot, on_exit=[load_jsb])),
         RegisterEventHandler(OnProcessExit(
