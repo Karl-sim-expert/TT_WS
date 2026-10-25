@@ -7,7 +7,7 @@ install(DIRECTORY launch rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(PROGRAMS scripts/scene_markers.py
+install(PROGRAMS scripts/scene_markers.py scripts/ball_machine.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

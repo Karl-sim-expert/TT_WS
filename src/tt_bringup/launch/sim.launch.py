@@ -32,6 +32,9 @@ def generate_launch_description():
     gz_args = LaunchConfiguration('gz_args')
     cameras = LaunchConfiguration('cameras')
     rviz = LaunchConfiguration('rviz')
+    machine_args = ('speed', 'spin_top', 'spin_side', 'target_x', 'target_y',
+                    'target_y_jitter', 'period')
+    machine_cfg = {n: LaunchConfiguration(f'machine_{n}') for n in machine_args}
 
     robot_description = {'robot_description': ParameterValue(Command([
         FindExecutable(name='xacro'), ' ',
@@ -77,6 +80,13 @@ def generate_launch_description():
         package='tt_bringup', executable='scene_markers.py', output='screen',
         condition=IfCondition(rviz), parameters=[{'use_sim_time': True}])
 
+    # Ball machine (opt-in, ball_machine:=true): fires at the chosen landing point every `period` s.
+    ball_machine = Node(
+        package='tt_bringup', executable='ball_machine.py', output='screen',
+        condition=IfCondition(LaunchConfiguration('ball_machine')),
+        parameters=[{n: ParameterValue(c, value_type=float) for n, c in machine_cfg.items()},
+                    {'use_sim_time': True}])
+
     # Cameras are opt-in (cameras:=true): two 120 Hz cameras are expensive to render.
     camera_nodes = []
     for name, y in (('camera_a', '0.4'), ('camera_b', '-0.4')):
@@ -102,6 +112,14 @@ def generate_launch_description():
         DeclareLaunchArgument('gz_args', default_value='-r -s --render-engine ogre'),
         DeclareLaunchArgument('cameras', default_value='false'),
         DeclareLaunchArgument('rviz', default_value='true'),
+        DeclareLaunchArgument('ball_machine', default_value='false'),
+        DeclareLaunchArgument('machine_speed', default_value='9.0'),
+        DeclareLaunchArgument('machine_spin_top', default_value='0.0'),
+        DeclareLaunchArgument('machine_spin_side', default_value='0.0'),
+        DeclareLaunchArgument('machine_target_x', default_value='0.8'),
+        DeclareLaunchArgument('machine_target_y', default_value='0.0'),
+        DeclareLaunchArgument('machine_target_y_jitter', default_value='0.0'),
+        DeclareLaunchArgument('machine_period', default_value='2.5'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_SYSTEM_PLUGIN_PATH', plugin_path),
@@ -113,6 +131,7 @@ def generate_launch_description():
         bridge,
         *camera_nodes,
         rviz_node,
+        ball_machine,
         scene_markers,
         RegisterEventHandler(OnProcessExit(
             target_action=spawn_robot, on_exit=[load_jsb])),
