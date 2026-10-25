@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.8)
 project(tt_gazebo)
 
+# WSL appends Windows directories to PATH; CMake then finds e.g. Anaconda's protobuf under
+# /mnt/c/... whose headers do not match the system ignition-msgs. Ignore /mnt/* during configure.
+if(DEFINED ENV{PATH})
+  string(REPLACE ":" ";" _tt_path "$ENV{PATH}")
+  list(FILTER _tt_path EXCLUDE REGEX "^/mnt/")
+  string(REPLACE ";" ":" _tt_path "${_tt_path}")
+  set(ENV{PATH} "${_tt_path}")
+endif()
+
 find_package(ament_cmake REQUIRED)
 
 # Ball physics plugin (Gazebo Fortress = ignition-gazebo6)
