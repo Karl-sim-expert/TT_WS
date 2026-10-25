@@ -6,6 +6,9 @@
 #include <mutex>
 #include <optional>
 
+#include <chrono>
+
+#include <ignition/common/Console.hh>
 #include <ignition/gazebo/EntityComponentManager.hh>
 #include <ignition/gazebo/Link.hh>
 #include <ignition/gazebo/Model.hh>
@@ -57,7 +60,12 @@ public:
     get("launch_y", this->launchPos.Y());
     get("launch_z", this->launchPos.Z());
 
+    if (sdf->HasElement("debug")) {
+      this->debug = sdf->Get<bool>("debug");
+    }
     this->node.Subscribe("/ball/launch", &BallPhysics::OnLaunch, this);
+    ignmsg << "[BallPhysics] loaded (link entity " << this->link.Entity()
+           << ", debug=" << this->debug << ")" << std::endl;
   }
 
   void PreUpdate(
@@ -92,6 +100,15 @@ public:
     Vec3 v{lin->X(), lin->Y(), lin->Z()};
     Vec3 w{ang->X(), ang->Y(), ang->Z()};
 
+    if (this->debug && info.simTime - this->lastLog >= std::chrono::milliseconds(250)) {
+      this->lastLog = info.simTime;
+      const Vec3 fd = aerodynamic_force(this->params, v, w);
+      ignmsg << "[BallPhysics] t=" << std::chrono::duration<double>(info.simTime).count()
+             << " pos=(" << pose->Pos().X() << "," << pose->Pos().Y() << "," << pose->Pos().Z()
+             << ") v=(" << v.x << "," << v.y << "," << v.z << ") |w|=" << norm(w)
+             << " F=(" << fd.x << "," << fd.y << "," << fd.z << ")" << std::endl;
+    }
+
     // Table bounce (analytic): ball surface reaches the table plane while moving down.
     if (this->table.contains(pose->Pos().X(), pose->Pos().Y()) &&
       pose->Pos().Z() - this->params.radius <= this->table.top_z && v.z < 0.0 &&
@@ -120,6 +137,8 @@ private:
   BallParams params;
   Table table;
   ignition::math::Vector3d launchPos{-1.8, 0.0, 1.0};
+  bool debug{false};
+  std::chrono::steady_clock::duration lastLog{};
   std::mutex mutex;
   std::optional<ignition::msgs::Twist> pendingLaunch;
 };

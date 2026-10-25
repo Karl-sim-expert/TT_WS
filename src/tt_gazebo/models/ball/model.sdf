@@ -17,6 +17,7 @@
       <lift_max>0.6</lift_max>
       <restitution>0.9</restitution>
       <friction>0.25</friction>
+      <debug>true</debug>
       <launch_x>-1.8</launch_x>
       <launch_y>0.0</launch_y>
       <launch_z>1.0</launch_z>

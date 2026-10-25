@@ -19,6 +19,7 @@ find_package(ignition-gazebo6 REQUIRED)
 find_package(ignition-transport11 REQUIRED)
 find_package(ignition-msgs8 REQUIRED)
 find_package(ignition-math6 REQUIRED)
+find_package(ignition-common4 REQUIRED)
 
 add_library(BallPhysics SHARED src/BallPhysics.cc)
 target_include_directories(BallPhysics PRIVATE include)
@@ -28,7 +29,8 @@ target_link_libraries(BallPhysics PRIVATE
   ignition-gazebo6::core
   ignition-transport11::core
   ignition-msgs8::core
-  ignition-math6::core)
+  ignition-math6::core
+  ignition-common4::core)
 
 install(TARGETS BallPhysics LIBRARY DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
