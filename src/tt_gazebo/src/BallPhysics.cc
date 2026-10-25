@@ -171,6 +171,21 @@ public:
              << " pos=(" << pose->Pos().X() << "," << pose->Pos().Y() << "," << pose->Pos().Z()
              << ") v=(" << v.x << "," << v.y << "," << v.z << ") |w|=" << norm(w)
              << " F=(" << fd.x << "," << fd.y << "," << fd.z << ")" << std::endl;
+      if (this->paddleGaveUp) {
+        ignmsg << "[BallPhysics] paddle: link not found (impacts disabled)" << std::endl;
+      } else if (!this->paddleValid) {
+        ignmsg << "[BallPhysics] paddle: no pose yet (robot not spawned?)" << std::endl;
+      } else {
+        const Vec3 d{pose->Pos().X() - this->paddleState.pos.x,
+          pose->Pos().Y() - this->paddleState.pos.y, pose->Pos().Z() - this->paddleState.pos.z};
+        const double h = dot(d, this->paddleState.axis_z);
+        const double radial = norm(d - h * this->paddleState.axis_z);
+        ignmsg << "[BallPhysics] paddle: pos=(" << this->paddleState.pos.x << ","
+               << this->paddleState.pos.y << "," << this->paddleState.pos.z << ") |v|="
+               << norm(this->paddleState.vel) << " normal=(" << this->paddleState.axis_z.x << ","
+               << this->paddleState.axis_z.y << "," << this->paddleState.axis_z.z
+               << ") ball: along-normal=" << h << " off-axis=" << radial << std::endl;
+      }
     }
 
     // Paddle impact (analytic). A parked ball is at rest by definition.

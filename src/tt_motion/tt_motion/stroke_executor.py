@@ -31,6 +31,10 @@ class StrokeExecutor(Node):
         self.declare_parameter('tip_link', 'paddle')
         self.declare_parameter('q_ready', READY)
         self.declare_parameter('vel_scale', 1.0)
+        # gz_ros2_control follows position commands with a first-order lag (time constant
+        # 1 / (position_proportional_gain * update_rate) = 10 ms at gain 0.1, 1 kHz). Send the
+        # trajectory this much earlier so the paddle arrives at the planned time.
+        self.declare_parameter('tracking_lag', 0.010)
         self.declare_parameter('rail_joint', 'rail_joint')
         self.declare_parameter('rail_weight', 0.1)   # < 1: the rail carries the translation
         self.declare_parameter('d_back', 0.20)
@@ -82,9 +86,10 @@ class StrokeExecutor(Node):
         else:
             rot = quat_to_matrix(quat)
 
+        lag = float(self.get_parameter('tracking_lag').value)
         try:
             stroke = build_stroke(
-                self.chain, self.q, self.q_ready, pos, rot, vel, t_hit, self.params)
+                self.chain, self.q, self.q_ready, pos, rot, vel, t_hit - lag, self.params)
         except StrokeError as err:
             self.get_logger().error(f'stroke rejected: {err}')
             return
@@ -102,7 +107,7 @@ class StrokeExecutor(Node):
             msg.points.append(p)
         self.pub.publish(msg)
         self.get_logger().info(
-            f'stroke sent: hit in {t_hit:.2f} s (min lead {stroke.min_lead:.2f} s), paddle speed '
+            f'stroke sent: hit in {t_hit:.2f} s (commanded {lag * 1000:.0f} ms early, min lead {stroke.min_lead:.2f} s), paddle speed '
             f'{stroke.hit_speed:.2f} m/s (requested {req:.2f}), peak joint speed '
             f'{100 * stroke.max_joint_vel_ratio:.0f}% of limit, {len(msg.points)} points')
         if stroke.hit_speed < 0.99 * req:
