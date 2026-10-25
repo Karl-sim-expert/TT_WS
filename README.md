@@ -15,7 +15,7 @@ source install/setup.bash
 
 ```bash
 sudo apt install ros-humble-ros-gz ros-humble-gz-ros2-control \
-  ros-humble-ros2-controllers ros-humble-moveit-resources-panda-description ros-humble-xacro
+  ros-humble-ros2-controllers ros-humble-ros2controlcli ros-humble-moveit-resources-panda-description ros-humble-xacro
 colcon build --symlink-install && source install/setup.bash
 ros2 launch tt_bringup sim.launch.py            # GUI 포함
 ros2 launch tt_bringup sim.launch.py gz_args:="-r -s --render-engine ogre"   # 서버만

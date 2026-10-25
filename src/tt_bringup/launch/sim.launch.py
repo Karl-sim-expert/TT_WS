@@ -59,12 +59,12 @@ def generate_launch_description():
             '/camera_b/image_raw@sensor_msgs/msg/Image[gz.msgs.Image',
         ])
 
-    load_jsb = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'joint_state_broadcaster'], output='screen')
-    load_arm = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'panda_arm_controller'], output='screen')
+    load_jsb = Node(
+        package='controller_manager', executable='spawner', output='screen',
+        arguments=['joint_state_broadcaster'])
+    load_arm = Node(
+        package='controller_manager', executable='spawner', output='screen',
+        arguments=['panda_arm_controller'])
 
     return LaunchDescription([
         DeclareLaunchArgument('gz_args', default_value='-r --render-engine ogre'),
