@@ -2,7 +2,7 @@
 <!-- MoveIt semantic description for the Panda + paddle (tt_robot.urdf.xacro). -->
 <robot name="tt_robot">
   <group name="panda_arm">
-    <chain base_link="rail_base" tip_link="paddle"/>
+    <chain base_link="world" tip_link="paddle"/>
   </group>
   <group name="paddle">
     <link name="paddle"/>

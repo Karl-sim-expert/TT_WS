@@ -28,6 +28,8 @@
       <material name="rail_grey"><color rgba="0.35 0.35 0.35 1"/></material>
     </visual>
   </link>
+  <!-- rail_base is a visual-only body fixed to the world (Gazebo merges it into the world), so the
+       prismatic joint below must hang from `world`, not from rail_base. -->
   <joint name="world_to_rail" type="fixed">
     <parent link="world"/>
     <child link="rail_base"/>
@@ -46,9 +48,9 @@
     </visual>
   </link>
   <joint name="rail_joint" type="prismatic">
-    <parent link="rail_base"/>
+    <parent link="world"/>
     <child link="rail_carriage"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="$(arg base_x) $(arg base_y) 0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
     <limit lower="$(arg rail_lower)" upper="$(arg rail_upper)" effort="5000" velocity="$(arg rail_velocity)"/>
     <dynamics damping="10"/>
