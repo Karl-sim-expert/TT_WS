@@ -14,16 +14,16 @@ source install/setup.bash
 ## 실행 (WSL, Humble + Gazebo Fortress)
 
 ```bash
-sudo apt install ros-humble-ros-gz ros-humble-gz-ros2-control \
-  ros-humble-ros2-controllers ros-humble-ros2controlcli ros-humble-moveit-resources-panda-description ros-humble-xacro
-colcon build --symlink-install && source install/setup.bash
-ros2 launch tt_bringup sim.launch.py            # GUI 포함
-ros2 launch tt_bringup sim.launch.py gz_args:="-r -s --render-engine ogre"   # 서버만
+sudo apt install ros-humble-ros-gz ros-humble-gz-ros2-control ros-humble-ros2-controllers \
+  ros-humble-ros2controlcli ros-humble-moveit-resources-panda-description ros-humble-xacro ros-humble-rviz2
+cd ~/tt_ws && colcon build --symlink-install && source install/setup.bash
+ros2 launch tt_bringup sim.launch.py
 ```
 
-### 가벼운 화면 (RViz2)
-Gazebo 창 대신 RViz2로 로봇·탁구대·공을 본다 (Gazebo는 GUI 없이 서버만):
-```bash
-sudo apt install ros-humble-rviz2
-ros2 launch tt_bringup sim.launch.py gz_args:="-r -s --render-engine ogre" rviz:=true
-```
+기본값: Gazebo는 GUI 없이 서버만 돌고(물리 시뮬레이션), 화면은 RViz2로 본다.
+
+| 옵션 | 기본값 | 설명 |
+| --- | --- | --- |
+| `rviz` | `true` | RViz2 화면 (로봇, 탁구대, 공) |
+| `cameras` | `false` | RGB 카메라 2대 (120 Hz). 켜면 RTF가 크게 떨어짐 |
+| `gz_args` | `-r -s --render-engine ogre` | Gazebo 인자. GUI가 필요하면 `gz_args:="-r --render-engine ogre"` |

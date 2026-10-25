@@ -24,7 +24,8 @@ def generate_launch_description():
         get_package_share_directory('moveit_resources_panda_description'))
     resource_path = os.pathsep.join([os.path.join(gazebo_share, 'models'), panda_parent])
 
-    # gz_args: '-r' starts running; add '-s' for server-only (no GUI) runs.
+    # gz_args: '-r' starts running, '-s' = server only (no Gazebo GUI; RViz2 is the viewer).
+    # For the Gazebo GUI use gz_args:='-r --render-engine ogre'.
     # ogre2 crashes under WSLg, so default to the ogre (1.x) render engine.
     gz_args = LaunchConfiguration('gz_args')
     cameras = LaunchConfiguration('cameras')
@@ -61,8 +62,7 @@ def generate_launch_description():
             '/model/ball/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
         ])
 
-    # Lightweight viewer: rviz:=true (pair with gz_args:="-r -s --render-engine ogre"
-    # to run Gazebo without its GUI).
+    # Lightweight viewer (default on): rviz:=false to disable.
     rviz_node = Node(
         package='rviz2', executable='rviz2', output='screen',
         condition=IfCondition(rviz),
@@ -95,9 +95,9 @@ def generate_launch_description():
         arguments=['panda_arm_controller'])
 
     return LaunchDescription([
-        DeclareLaunchArgument('gz_args', default_value='-r --render-engine ogre'),
+        DeclareLaunchArgument('gz_args', default_value='-r -s --render-engine ogre'),
         DeclareLaunchArgument('cameras', default_value='false'),
-        DeclareLaunchArgument('rviz', default_value='false'),
+        DeclareLaunchArgument('rviz', default_value='true'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
         gz_sim,
