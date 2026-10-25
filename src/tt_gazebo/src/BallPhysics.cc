@@ -284,7 +284,7 @@ private:
       if (robot == ignition::gazebo::kNullEntity) {
         return;
       }
-      const ignition::gazebo::Model robotModel(robot);
+      ignition::gazebo::Model robotModel(robot);
       this->paddleLink = robotModel.LinkByName(ecm, "paddle");
       if (this->paddleLink != ignition::gazebo::kNullEntity) {
         ignmsg << "[BallPhysics] paddle link found" << std::endl;
