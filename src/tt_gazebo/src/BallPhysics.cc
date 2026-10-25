@@ -81,12 +81,21 @@ public:
       std::lock_guard<std::mutex> lock(this->mutex);
       launch.swap(this->pendingLaunch);
     }
-    if (launch) {
+    const double dt = std::chrono::duration<double>(info.dt).count();
+    if (launch && dt > 0.0) {
+      // Teleport, then give the ball the requested velocity/spin with a one-step impulse
+      // (velocity commands did not behave reliably, see ball bounce debugging).
       this->model.SetWorldPoseCmd(ecm, ignition::math::Pose3d(this->launchPos, {}));
-      this->link.SetLinearVelocity(
-        ecm, {launch->linear().x(), launch->linear().y(), launch->linear().z()});
-      this->link.SetAngularVelocity(
-        ecm, {launch->angular().x(), launch->angular().y(), launch->angular().z()});
+      const auto lin0 = this->link.WorldLinearVelocity(ecm);
+      const auto ang0 = this->link.WorldAngularVelocity(ecm);
+      const ignition::math::Vector3d v1{
+        launch->linear().x(), launch->linear().y(), launch->linear().z()};
+      const ignition::math::Vector3d w1{
+        launch->angular().x(), launch->angular().y(), launch->angular().z()};
+      this->ApplyVelocityChange(
+        ecm, dt, v1 - lin0.value_or(ignition::math::Vector3d::Zero),
+        w1 - ang0.value_or(ignition::math::Vector3d::Zero));
+      this->cooldownUntil = info.simTime + std::chrono::milliseconds(50);
       return;
     }
 
@@ -110,13 +119,22 @@ public:
     }
 
     // Table bounce (analytic): ball surface reaches the table plane while moving down.
-    if (this->table.contains(pose->Pos().X(), pose->Pos().Y()) &&
+    if (info.simTime >= this->cooldownUntil && dt > 0.0 &&
+      this->table.contains(pose->Pos().X(), pose->Pos().Y()) &&
       pose->Pos().Z() - this->params.radius <= this->table.top_z && v.z < 0.0 &&
       pose->Pos().Z() > this->table.top_z - 0.5 * this->params.radius)
     {
+      const Vec3 v0 = v;
+      const Vec3 w0 = w;
       table_bounce(this->params, v, w);
-      this->link.SetLinearVelocity(ecm, {v.x, v.y, v.z});
-      this->link.SetAngularVelocity(ecm, {w.x, w.y, w.z});
+      this->ApplyVelocityChange(
+        ecm, dt, Vec3{v.x - v0.x, v.y - v0.y, v.z - v0.z},
+        Vec3{w.x - w0.x, w.y - w0.y, w.z - w0.z});
+      this->cooldownUntil = info.simTime + std::chrono::milliseconds(20);
+      if (this->debug) {
+        ignmsg << "[BallPhysics] BOUNCE at z=" << pose->Pos().Z() << " v " << v0.z << " -> "
+               << v.z << " (vx " << v0.x << " -> " << v.x << ")" << std::endl;
+      }
       return;
     }
 
@@ -125,6 +143,25 @@ public:
   }
 
 private:
+  // Change the ball's velocity/spin by applying a one-step force/torque (impulse = m dv).
+  void ApplyVelocityChange(
+    ignition::gazebo::EntityComponentManager & ecm, double dt,
+    const ignition::math::Vector3d & dv, const ignition::math::Vector3d & dw)
+  {
+    const double inertia = 2.0 / 3.0 * this->params.mass * this->params.radius *
+      this->params.radius;
+    this->link.AddWorldWrench(
+      ecm, (this->params.mass / dt) * dv, (inertia / dt) * dw);
+  }
+
+  void ApplyVelocityChange(
+    ignition::gazebo::EntityComponentManager & ecm, double dt, const Vec3 & dv, const Vec3 & dw)
+  {
+    this->ApplyVelocityChange(
+      ecm, dt, ignition::math::Vector3d(dv.x, dv.y, dv.z),
+      ignition::math::Vector3d(dw.x, dw.y, dw.z));
+  }
+
   void OnLaunch(const ignition::msgs::Twist & msg)
   {
     std::lock_guard<std::mutex> lock(this->mutex);
@@ -138,6 +175,7 @@ private:
   Table table;
   ignition::math::Vector3d launchPos{-1.8, 0.0, 1.0};
   bool debug{false};
+  std::chrono::steady_clock::duration cooldownUntil{};
   std::chrono::steady_clock::duration lastLog{};
   std::mutex mutex;
   std::optional<ignition::msgs::Twist> pendingLaunch;
