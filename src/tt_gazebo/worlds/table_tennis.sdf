@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<!-- Table tennis world for Gazebo Fortress. Coordinates: table long axis = x, net at x=0,
+     ball machine side at x<0, robot at x>0, table top surface at z=0.76 m (ITTF). -->
+<sdf version="1.8">
+  <world name="table_tennis">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <!-- Fortress plugin names (ignition-gazebo-*). ogre2 crashes on WSLg (GL3Plus texture copy), so use ogre. Also pass the render-engine option "ogre" to the GUI (see tt_bringup launch). -->
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre</render_engine>
+    </plugin>
+
+    <gravity>0 0 -9.81</gravity>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.3 0.2 -1</direction>
+    </light>
+
+    <model name="ground">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry></collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="table">
+      <static>true</static>
+      <pose>0 0 0.745 0 0 0</pose>
+      <link name="top">
+        <collision name="top_collision">
+          <geometry><box><size>2.74 1.525 0.03</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.25</mu><mu2>0.25</mu2></ode></friction>
+            <bounce><restitution_coefficient>0.9</restitution_coefficient><threshold>0.01</threshold></bounce>
+          </surface>
+        </collision>
+        <visual name="top_visual">
+          <geometry><box><size>2.74 1.525 0.03</size></box></geometry>
+          <material><ambient>0.05 0.25 0.5 1</ambient><diffuse>0.05 0.25 0.5 1</diffuse></material>
+        </visual>
+      <collision name="leg_-1.25_-0.65"><pose>-1.25 -0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></collision>
+      <visual name="leg_-1.25_-0.65"><pose>-1.25 -0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></visual>
+      <collision name="leg_-1.25_0.65"><pose>-1.25 0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></collision>
+      <visual name="leg_-1.25_0.65"><pose>-1.25 0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></visual>
+      <collision name="leg_1.25_-0.65"><pose>1.25 -0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></collision>
+      <visual name="leg_1.25_-0.65"><pose>1.25 -0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></visual>
+      <collision name="leg_1.25_0.65"><pose>1.25 0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></collision>
+      <visual name="leg_1.25_0.65"><pose>1.25 0.65 -0.375 0 0 0</pose><geometry><box><size>0.06 0.06 0.75</size></box></geometry></visual>
+      </link>
+      <link name="net">
+        <pose>0 0 0.091 0 0 0</pose>
+        <collision name="net_collision"><geometry><box><size>0.01 1.83 0.1525</size></box></geometry></collision>
+        <visual name="net_visual">
+          <geometry><box><size>0.01 1.83 0.1525</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.9 0.9 0.9 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+
+  </world>
+</sdf>

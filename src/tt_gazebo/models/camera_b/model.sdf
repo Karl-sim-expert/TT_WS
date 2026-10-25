@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="camera_b_rig">
+    <static>true</static>
+    <link name="link">
+      <sensor name="camera_b" type="camera">
+        <topic>camera_b/image_raw</topic>
+        <update_rate>120</update_rate>
+        <always_on>true</always_on>
+        <camera>
+          <horizontal_fov>1.2</horizontal_fov>
+          <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+          <clip><near>0.1</near><far>15</far></clip>
+        </camera>
+      </sensor>
+    </link>
+  </model>
+</sdf>

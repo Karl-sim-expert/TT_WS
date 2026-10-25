@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="ball">
+    <pose>0 0 1.0 0 0 0</pose>
+    <!-- Publishes ground truth pose + velocity on /model/ball/odometry (gz.msgs.Odometry). -->
+    <plugin filename="ignition-gazebo-odometry-publisher-system"
+            name="ignition::gazebo::systems::OdometryPublisher">
+      <odom_frame>world</odom_frame>
+      <robot_base_frame>ball</robot_base_frame>
+      <odom_publish_frequency>200</odom_publish_frequency>
+      <dimensions>3</dimensions>
+    </plugin>
+    <link name="link">
+      <inertial>
+        <mass>0.0027</mass>
+        <!-- hollow sphere: 2/3 m r^2 -->
+        <inertia>
+          <ixx>7.2e-7</ixx><iyy>7.2e-7</iyy><izz>7.2e-7</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><sphere><radius>0.02</radius></sphere></geometry>
+        <surface>
+          <friction><ode><mu>0.25</mu><mu2>0.25</mu2></ode></friction>
+          <bounce><restitution_coefficient>0.9</restitution_coefficient><threshold>0.01</threshold></bounce>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry><sphere><radius>0.02</radius></sphere></geometry>
+        <material>
+          <ambient>1 0.5 0 1</ambient>
+          <diffuse>1 0.5 0 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
