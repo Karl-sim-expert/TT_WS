@@ -1,6 +1,6 @@
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             IncludeLaunchDescription, RegisterEventHandler,
@@ -17,6 +17,8 @@ def generate_launch_description():
     gazebo_share = get_package_share_directory('tt_gazebo')
     description_share = get_package_share_directory('tt_description')
     world = os.path.join(gazebo_share, 'worlds', 'table_tennis.sdf')
+
+    plugin_path = os.path.join(get_package_prefix('tt_gazebo'), 'lib', 'tt_gazebo')
 
     # Parent dir of the Panda description share dir: lets Gazebo resolve the
     # model://moveit_resources_panda_description/... mesh URIs.
@@ -60,6 +62,7 @@ def generate_launch_description():
         arguments=[
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/model/ball/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/ball/launch@geometry_msgs/msg/Twist]gz.msgs.Twist',
         ])
 
     # Lightweight viewer (default on): rviz:=false to disable.
@@ -101,6 +104,8 @@ def generate_launch_description():
         DeclareLaunchArgument('rviz', default_value='true'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
+        SetEnvironmentVariable('IGN_GAZEBO_SYSTEM_PLUGIN_PATH', plugin_path),
+        SetEnvironmentVariable('GZ_SIM_SYSTEM_PLUGIN_PATH', plugin_path),
         gz_sim,
         robot_state_publisher,
         spawn_robot,
