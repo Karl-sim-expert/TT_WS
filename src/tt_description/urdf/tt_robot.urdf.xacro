@@ -36,8 +36,11 @@
     <origin xyz="$(arg base_x) $(arg base_y) $(arg base_z)" rpy="0 0 $(arg base_yaw)"/>
   </joint>
 
-  <!-- Paddle: disc of 150 mm diameter, 12 mm thick (collision >= 10 mm to limit tunneling).
-       Face normal = panda_hand +x. TODO: tune pose/size once the stroke planner exists. -->
+  <!-- Paddle: disc of 150 mm diameter, 12 mm thick. Face normal = local +z (= panda_hand +x).
+       No engine collision: the BallPhysics plugin computes the paddle impact analytically from
+       this link's pose and velocity (a 10 m/s ball moves 1 cm per 1 ms step, the engine would
+       miss thin contacts). The fixed joint is preserved so the link survives the URDF -> SDF
+       conversion (otherwise it is lumped into panda_hand). -->
   <link name="paddle">
     <inertial>
       <mass value="0.15"/>
@@ -47,10 +50,10 @@
       <geometry><cylinder radius="0.075" length="0.012"/></geometry>
       <material name="paddle_red"><color rgba="0.8 0.1 0.1 1"/></material>
     </visual>
-    <collision>
-      <geometry><cylinder radius="0.075" length="0.012"/></geometry>
-    </collision>
   </link>
+  <gazebo reference="paddle_joint">
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
   <joint name="paddle_joint" type="fixed">
     <parent link="panda_hand"/>
     <child link="paddle"/>

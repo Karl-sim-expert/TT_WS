@@ -2,7 +2,7 @@
 
 ROS 2 Humble 기반 탁구 로봇 워크스페이스 (Franka Panda, Gazebo 시뮬레이션 전용).
 
-진행 상황: M0(환경) 완료, M1(탁구대·공 물리, 볼머신) 완료. 다음은 M2(팔 제어, 정지한 공 때리기).
+진행 상황: M0(환경) 완료, M1(탁구대·공 물리, 볼머신) 완료. M2(팔 제어, 정지한 공 때리기) 코드 작성 완료, WSL 테스트 중.
 
 ```bash
 cd ~/tt_ws
@@ -52,3 +52,32 @@ ros2 launch tt_bringup sim.launch.py ball_machine:=true machine_period:=3.0 mach
 ```
 인자: `vx vy vz [wx wy wz]` (속도 m/s, 스핀 rad/s; 100 rps = 628 rad/s)
 공 물리(항력, 마그누스, 탁구대 바운스)는 `tt_gazebo`의 `BallPhysics` 플러그인이 계산한다.
+
+## M2: 정지한 공 때리기
+
+설치(최초 1회): `sudo apt install ros-humble-moveit`
+
+```bash
+cd ~/tt_ws && colcon build --symlink-install && source install/setup.bash
+ros2 launch tt_bringup static_hit.launch.py
+```
+공이 허공에 멈춰 있고(`/ball/hold`), 로봇이 `StrokePlan`에 맞춰 스윙해 지정한 방향으로 공을 날린다. 끝나면 터미널에
+`HIT: timing error ... ms, direction error ... deg`가 출력된다(타이밍 오차 목표 ≤ 10 ms).
+
+| 옵션 | 기본값 | 설명 |
+| --- | --- | --- |
+| `speed` | `4.5` | 요청하는 공 속도 [m/s] (관절 속도 한계에 걸리면 자동으로 낮춘다) |
+| `elevation_deg` / `yaw_deg` | `25` / `0` | 공을 보낼 방향 (위로 각도 / 좌우 각도) |
+| `ball_x` `ball_y` `ball_z` | `1.15 0 0.95` | 공을 멈춰 둘 위치 [m] |
+| `vel_scale` | `4.0` | **시뮬레이션 전용** 관절 속도 한계 배율. `1.0`이 실제 Panda (공 속도 약 1.2 m/s가 한계) |
+| `repeat` | `1` | 반복 횟수 (끝에 평균/최대 오차 요약) |
+| `lead` | `4.0` | 계획 후 타격까지 시간 [s] |
+
+예: `ros2 launch tt_bringup static_hit.launch.py speed:=3.0 elevation_deg:=30 repeat:=5`
+
+- 공은 시작할 때 볼머신 위치에 멈춰 있다가 `fire_ball.sh` / 볼머신이 쏠 때만 움직인다. 위치 지정: `tools/hold_ball.sh 1.15 0 0.95`
+- 라켓-공 충돌은 엔진 접촉이 아니라 `BallPhysics` 플러그인이 해석적으로 계산한다 (반발계수 0.85, 마찰 0.45).
+- 라켓에 맞을 때마다 `/ball/paddle_hit`(nav_msgs/Odometry)가 나온다: 시각, 위치, 맞은 직후 속도·스핀.
+- MoveIt (선택): `ros2 launch tt_bringup sim.launch.py moveit:=true` 후 `ros2 launch tt_moveit_config move_group.launch.py rviz:=true` (RViz2 MotionPlanning).
+  고속 스윙은 `tt_motion`이 직접 만들고, MoveIt은 설정·IK·충돌 검사·느린 이동에 쓴다 (설계 문서 5절).
+- 클라우드 없이 계산만 검증: `python3 -m unittest discover -s src/tt_motion/test` (FK/IK, 스윙 궤적, 관절 한계)

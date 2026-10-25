@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<!-- MoveIt semantic description for the Panda + paddle (tt_robot.urdf.xacro). -->
+<robot name="tt_robot">
+  <group name="panda_arm">
+    <chain base_link="panda_link0" tip_link="paddle"/>
+  </group>
+  <group name="paddle">
+    <link name="paddle"/>
+  </group>
+
+  <!-- Ready pose: same as the initial joint values in tt_robot.urdf.xacro and q_ready in tt_motion. -->
+  <group_state name="ready" group="panda_arm">
+    <joint name="panda_joint1" value="-0.058"/>
+    <joint name="panda_joint2" value="0.132"/>
+    <joint name="panda_joint3" value="0.351"/>
+    <joint name="panda_joint4" value="-2.048"/>
+    <joint name="panda_joint5" value="-0.631"/>
+    <joint name="panda_joint6" value="1.803"/>
+    <joint name="panda_joint7" value="1.559"/>
+  </group_state>
+
+  <end_effector name="paddle_ee" parent_link="paddle" group="paddle" parent_group="panda_arm"/>
+
+  <!-- Adjacent links -->
+  <disable_collisions link1="panda_link0" link2="panda_link1" reason="Adjacent"/>
+  <disable_collisions link1="panda_link1" link2="panda_link2" reason="Adjacent"/>
+  <disable_collisions link1="panda_link2" link2="panda_link3" reason="Adjacent"/>
+  <disable_collisions link1="panda_link3" link2="panda_link4" reason="Adjacent"/>
+  <disable_collisions link1="panda_link4" link2="panda_link5" reason="Adjacent"/>
+  <disable_collisions link1="panda_link5" link2="panda_link6" reason="Adjacent"/>
+  <disable_collisions link1="panda_link6" link2="panda_link7" reason="Adjacent"/>
+  <disable_collisions link1="panda_link7" link2="panda_hand" reason="Adjacent"/>
+  <disable_collisions link1="panda_hand" link2="panda_leftfinger" reason="Adjacent"/>
+  <disable_collisions link1="panda_hand" link2="panda_rightfinger" reason="Adjacent"/>
+  <disable_collisions link1="panda_hand" link2="paddle" reason="Adjacent"/>
+  <disable_collisions link1="pedestal" link2="panda_link0" reason="Adjacent"/>
+
+  <!-- Links that can never touch (as in the stock Panda config) -->
+  <disable_collisions link1="panda_link0" link2="panda_link2" reason="Never"/>
+  <disable_collisions link1="panda_link0" link2="panda_link3" reason="Never"/>
+  <disable_collisions link1="panda_link0" link2="panda_link4" reason="Never"/>
+  <disable_collisions link1="panda_link1" link2="panda_link3" reason="Never"/>
+  <disable_collisions link1="panda_link1" link2="panda_link4" reason="Never"/>
+  <disable_collisions link1="panda_link2" link2="panda_link4" reason="Never"/>
+  <disable_collisions link1="panda_link2" link2="panda_link6" reason="Never"/>
+  <disable_collisions link1="panda_link3" link2="panda_link6" reason="Never"/>
+  <disable_collisions link1="panda_link4" link2="panda_link6" reason="Never"/>
+  <disable_collisions link1="panda_link4" link2="panda_link7" reason="Never"/>
+  <disable_collisions link1="panda_hand" link2="panda_link0" reason="Never"/>
+  <disable_collisions link1="panda_hand" link2="panda_link1" reason="Never"/>
+  <disable_collisions link1="panda_hand" link2="panda_link2" reason="Never"/>
+  <disable_collisions link1="panda_hand" link2="panda_link3" reason="Never"/>
+  <disable_collisions link1="panda_hand" link2="panda_link4" reason="Default"/>
+  <disable_collisions link1="panda_hand" link2="panda_link6" reason="Never"/>
+  <disable_collisions link1="panda_leftfinger" link2="panda_rightfinger" reason="Default"/>
+  <disable_collisions link1="panda_leftfinger" link2="paddle" reason="Never"/>
+  <disable_collisions link1="panda_rightfinger" link2="paddle" reason="Never"/>
+  <disable_collisions link1="panda_link7" link2="paddle" reason="Never"/>
+  <disable_collisions link1="panda_link6" link2="paddle" reason="Never"/>
+  <!-- The pedestal carries the arm: ignore it for the first links -->
+  <disable_collisions link1="pedestal" link2="panda_link1" reason="Never"/>
+  <disable_collisions link1="pedestal" link2="panda_link2" reason="Never"/>
+</robot>
