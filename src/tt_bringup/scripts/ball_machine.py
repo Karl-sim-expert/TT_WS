@@ -122,8 +122,7 @@ def main_ros():
             d = self.declare_parameter
             d('speed', 9.0)          # [m/s]
             d('speed_jitter', 0.0)   # +- random speed [m/s]
-            d('spin_top', 0.0)       # [rad/s] + topspin, - backspin
-            d('spin_side', 0.0)      # [rad/s] + counter-clockwise seen from above
+            d('spin_max', 200.0)     # [rad/s] random topspin/backspin in -max..max, sidespin +-max/2
             d('x_min', 0.6)          # random landing zone on the robot half [m] (x_min..x_max)
             d('x_max', 1.25)
             d('y_max', 0.70)         # landing y is uniform in -y_max..y_max (table half width 0.76)
@@ -157,15 +156,17 @@ def main_ros():
             speed = g('speed') + random.uniform(-1, 1) * g('speed_jitter')
             for _ in range(6):
                 tx, ty, miss = self.pick_target()
-                sol = solve(speed, tx, ty, g('spin_top'), g('spin_side'))
+                top = random.uniform(-1, 1) * g('spin_max')
+                side = random.uniform(-1, 1) * g('spin_max') / 2.0
+                sol = solve(speed, tx, ty, top, side)
                 if sol is not None:
                     break
             else:
                 self.get_logger().warn(
-                    f'no launch found for speed={speed:.1f} spin=({g("spin_top")},'
-                    f'{g("spin_side")}); try a lower x_min or other speed')
+                    f'no launch found for speed={speed:.1f} spin_max={g("spin_max")}; '
+                    'try a lower x_min, lower spin_max or other speed')
                 return
-            v, w = launch_velocity(speed, sol[0], sol[1], g('spin_top'), g('spin_side'))
+            v, w = launch_velocity(speed, sol[0], sol[1], top, side)
             m = Twist()
             m.linear.x, m.linear.y, m.linear.z = v
             m.angular.x, m.angular.y, m.angular.z = w
@@ -173,7 +174,7 @@ def main_ros():
             self.fired += 1
             self.get_logger().info(
                 f'shot {self.fired}: speed={speed:.1f} elev={math.degrees(sol[0]):.1f}deg '
-                f'azim={math.degrees(sol[1]):.1f}deg -> aim ({tx:.2f},{ty:.2f}) '
+                f'azim={math.degrees(sol[1]):.1f}deg top={top:.0f} side={side:.0f} rad/s -> aim ({tx:.2f},{ty:.2f}) '
                 f'{"OFF TABLE" if miss else "on table"}')
             if g('count') and self.fired >= g('count'):
                 self.timer.cancel()

@@ -32,7 +32,7 @@ def generate_launch_description():
     gz_args = LaunchConfiguration('gz_args')
     cameras = LaunchConfiguration('cameras')
     rviz = LaunchConfiguration('rviz')
-    machine_args = ('speed', 'spin_top', 'spin_side', 'x_min', 'miss_percent', 'period')
+    machine_args = ('speed', 'spin_max', 'x_min', 'miss_percent', 'period')
     machine_cfg = {n: LaunchConfiguration(f'machine_{n}') for n in machine_args}
 
     robot_description = {'robot_description': ParameterValue(Command([
@@ -113,8 +113,7 @@ def generate_launch_description():
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument('ball_machine', default_value='false'),
         DeclareLaunchArgument('machine_speed', default_value='9.0'),
-        DeclareLaunchArgument('machine_spin_top', default_value='0.0'),
-        DeclareLaunchArgument('machine_spin_side', default_value='0.0'),
+        DeclareLaunchArgument('machine_spin_max', default_value='200.0'),
         DeclareLaunchArgument('machine_x_min', default_value='0.6'),
         DeclareLaunchArgument('machine_miss_percent', default_value='0.0'),
         DeclareLaunchArgument('machine_period', default_value='2.5'),
