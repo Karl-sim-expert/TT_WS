@@ -148,7 +148,8 @@ public:
           this->model.SetWorldPoseCmd(ecm, fixed);
         }
         if (this->debug && !resting) {
-          ignmsg << "[BallPhysics] BOUNCE at z=" << pose->Pos().Z() << " v " << v0.z << " -> "
+          ignmsg << "[BallPhysics] BOUNCE at x=" << pose->Pos().X() << " y=" << pose->Pos().Y()
+                 << " z=" << pose->Pos().Z() << " v " << v0.z << " -> "
                  << v.z << " (vx " << v0.x << " -> " << v.x << ")" << std::endl;
         }
         return;
