@@ -49,7 +49,7 @@ def generate_launch_description():
     spawn_ball = Node(
         package='ros_gz_sim', executable='create', output='screen',
         arguments=['-file', os.path.join(gazebo_share, 'models', 'ball', 'model.sdf'),
-                   '-name', 'ball', '-x', '-1.5', '-y', '0', '-z', '1.0'])
+                   '-name', 'ball', '-x', '-0.8', '-y', '0', '-z', '1.2'])
 
     bridge = Node(
         package='ros_gz_bridge', executable='parameter_bridge', output='screen',
