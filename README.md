@@ -32,12 +32,13 @@ ros2 launch tt_bringup sim.launch.py
 - 정상 종료: 실행 터미널에서 `Ctrl+C` **한 번**만 누르고 5초쯤 기다리거나, RViz2 창을 닫는다 (창을 닫으면 전체가 같이 종료됨).
 - 잔여 프로세스 정리: `~/tt_ws/tools/kill_sim.sh` (`clean: ...`이 나오면 정상)
 
-### 볼머신 (원하는 지점에 맞춰 자동 발사)
+### 볼머신 (랜덤 낙하점 자동 발사)
 ```bash
-ros2 launch tt_bringup sim.launch.py ball_machine:=true machine_speed:=9.0 machine_target_x:=0.8 machine_target_y:=0.0 machine_target_y_jitter:=0.3 machine_period:=2.5 machine_spin_top:=100.0
+ros2 launch tt_bringup sim.launch.py ball_machine:=true machine_period:=3.0 machine_miss_percent:=20 machine_speed:=9.0 machine_spin_top:=100.0
 ```
-공이 로봇 쪽 판의 (target_x, target_y)에 떨어지도록 발사 각도를 자동 계산한다 (`target_x`는 0.1~1.3).
-`spin_top`(+ 윗회전, - 백스핀), `spin_side`는 rad/s. 계산만 확인: `python3 src/tt_bringup/scripts/ball_machine.py --solve 9 0.8 0 100 0`
+매 발마다 로봇 쪽 판 위의 랜덤 지점(x: `machine_x_min`~1.25, y: ±0.7)을 정해 그곳에 떨어지도록 발사 각도를 자동 계산한다.
+`machine_miss_percent`(%)의 확률로 판 밖(끝선 너머 또는 옆선 밖)을 겨냥한다. `machine_spin_top`(+ 윗회전, - 백스핀), `machine_spin_side`는 rad/s.
+빠른 공은 네트 바로 너머에 못 떨어뜨리므로 `machine_x_min` 기본값은 0.6이다. 계산만 확인: `python3 src/tt_bringup/scripts/ball_machine.py --solve 9 0.8 0 100 0`
 
 ### 공 발사 (수동)
 시뮬레이션이 켜진 상태에서 다른 터미널에서 실행:

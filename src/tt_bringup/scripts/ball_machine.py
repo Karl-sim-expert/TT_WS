@@ -124,10 +124,10 @@ def main_ros():
             d('speed_jitter', 0.0)   # +- random speed [m/s]
             d('spin_top', 0.0)       # [rad/s] + topspin, - backspin
             d('spin_side', 0.0)      # [rad/s] + counter-clockwise seen from above
-            d('target_x', 0.8)       # landing point on the robot half [m] (0.1 .. 1.3)
-            d('target_y', 0.0)
-            d('target_x_jitter', 0.0)
-            d('target_y_jitter', 0.0)
+            d('x_min', 0.6)          # random landing zone on the robot half [m] (x_min..x_max)
+            d('x_max', 1.25)
+            d('y_max', 0.70)         # landing y is uniform in -y_max..y_max (table half width 0.76)
+            d('miss_percent', 0.0)   # % of shots aimed at a point OFF the table
             d('period', 2.5)         # [s] between shots
             d('start_delay', 5.0)    # [s] wait for the simulator
             d('count', 0)            # 0 = fire forever
@@ -140,16 +140,30 @@ def main_ros():
             self.timer = self.create_timer(self.get_parameter('period').value, self.fire)
             self.fire()
 
+        def pick_target(self):
+            g = lambda n: self.get_parameter(n).value
+            if random.uniform(0.0, 100.0) < g('miss_percent'):
+                # off the table: past the far end, or beyond a side edge
+                if random.random() < 0.5:
+                    return random.uniform(1.5, 1.9), random.uniform(-0.9, 0.9), True
+                side = random.choice((-1.0, 1.0))
+                return (random.uniform(g('x_min'), g('x_max')),
+                        side * random.uniform(0.9, 1.2), True)
+            return (random.uniform(g('x_min'), g('x_max')),
+                    random.uniform(-g('y_max'), g('y_max')), False)
+
         def fire(self):
             g = lambda n: self.get_parameter(n).value
             speed = g('speed') + random.uniform(-1, 1) * g('speed_jitter')
-            tx = g('target_x') + random.uniform(-1, 1) * g('target_x_jitter')
-            ty = g('target_y') + random.uniform(-1, 1) * g('target_y_jitter')
-            sol = solve(speed, tx, ty, g('spin_top'), g('spin_side'))
-            if sol is None:
+            for _ in range(6):
+                tx, ty, miss = self.pick_target()
+                sol = solve(speed, tx, ty, g('spin_top'), g('spin_side'))
+                if sol is not None:
+                    break
+            else:
                 self.get_logger().warn(
-                    f'no launch found for speed={speed:.1f} target=({tx:.2f},{ty:.2f}) '
-                    f'spin=({g("spin_top")},{g("spin_side")}); try slower/other target')
+                    f'no launch found for speed={speed:.1f} spin=({g("spin_top")},'
+                    f'{g("spin_side")}); try a lower x_min or other speed')
                 return
             v, w = launch_velocity(speed, sol[0], sol[1], g('spin_top'), g('spin_side'))
             m = Twist()
@@ -159,7 +173,8 @@ def main_ros():
             self.fired += 1
             self.get_logger().info(
                 f'shot {self.fired}: speed={speed:.1f} elev={math.degrees(sol[0]):.1f}deg '
-                f'azim={math.degrees(sol[1]):.1f}deg -> aim ({tx:.2f},{ty:.2f})')
+                f'azim={math.degrees(sol[1]):.1f}deg -> aim ({tx:.2f},{ty:.2f}) '
+                f'{"OFF TABLE" if miss else "on table"}')
             if g('count') and self.fired >= g('count'):
                 self.timer.cancel()
 

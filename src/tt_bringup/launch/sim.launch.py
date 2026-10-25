@@ -32,8 +32,7 @@ def generate_launch_description():
     gz_args = LaunchConfiguration('gz_args')
     cameras = LaunchConfiguration('cameras')
     rviz = LaunchConfiguration('rviz')
-    machine_args = ('speed', 'spin_top', 'spin_side', 'target_x', 'target_y',
-                    'target_y_jitter', 'period')
+    machine_args = ('speed', 'spin_top', 'spin_side', 'x_min', 'miss_percent', 'period')
     machine_cfg = {n: LaunchConfiguration(f'machine_{n}') for n in machine_args}
 
     robot_description = {'robot_description': ParameterValue(Command([
@@ -80,7 +79,7 @@ def generate_launch_description():
         package='tt_bringup', executable='scene_markers.py', output='screen',
         condition=IfCondition(rviz), parameters=[{'use_sim_time': True}])
 
-    # Ball machine (opt-in, ball_machine:=true): fires at the chosen landing point every `period` s.
+    # Ball machine (opt-in, ball_machine:=true): fires at a random landing point every `period` s.
     ball_machine = Node(
         package='tt_bringup', executable='ball_machine.py', output='screen',
         condition=IfCondition(LaunchConfiguration('ball_machine')),
@@ -116,9 +115,8 @@ def generate_launch_description():
         DeclareLaunchArgument('machine_speed', default_value='9.0'),
         DeclareLaunchArgument('machine_spin_top', default_value='0.0'),
         DeclareLaunchArgument('machine_spin_side', default_value='0.0'),
-        DeclareLaunchArgument('machine_target_x', default_value='0.8'),
-        DeclareLaunchArgument('machine_target_y', default_value='0.0'),
-        DeclareLaunchArgument('machine_target_y_jitter', default_value='0.0'),
+        DeclareLaunchArgument('machine_x_min', default_value='0.6'),
+        DeclareLaunchArgument('machine_miss_percent', default_value='0.0'),
         DeclareLaunchArgument('machine_period', default_value='2.5'),
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', resource_path),
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', resource_path),
