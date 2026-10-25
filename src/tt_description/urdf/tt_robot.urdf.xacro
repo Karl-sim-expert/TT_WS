@@ -3,8 +3,9 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tt_robot">
   <xacro:arg name="base_x" default="1.7"/>
   <xacro:arg name="base_y" default="0.0"/>
-  <!-- base_z = table top height: the arm sits on a pedestal next to the table end. -->
-  <xacro:arg name="base_z" default="0.76"/>
+  <!-- base_z: arm base height on a pedestal next to the table end (0.6 m = 16 cm below the table top,
+       which keeps both low balls and ~0.4 m-above-table balls inside the workspace). -->
+  <xacro:arg name="base_z" default="0.6"/>
   <xacro:arg name="base_yaw" default="3.14159265359"/>
   <xacro:arg name="controllers" default="$(find tt_description)/config/controllers.yaml"/>
 
@@ -69,13 +70,14 @@
         <state_interface name="velocity"/>
       </joint>
     </xacro:macro>
-    <xacro:arm_joint name="panda_joint1" initial="0.0"/>
-    <xacro:arm_joint name="panda_joint2" initial="-0.5"/>
-    <xacro:arm_joint name="panda_joint3" initial="0.0"/>
-    <xacro:arm_joint name="panda_joint4" initial="-2.0"/>
-    <xacro:arm_joint name="panda_joint5" initial="0.0"/>
-    <xacro:arm_joint name="panda_joint6" initial="1.57"/>
-    <xacro:arm_joint name="panda_joint7" initial="0.785"/>
+    <!-- Ready pose: paddle ~0.5 m in front of the base, face vertical, normal toward the table. -->
+    <xacro:arm_joint name="panda_joint1" initial="-0.058"/>
+    <xacro:arm_joint name="panda_joint2" initial="0.132"/>
+    <xacro:arm_joint name="panda_joint3" initial="0.351"/>
+    <xacro:arm_joint name="panda_joint4" initial="-2.048"/>
+    <xacro:arm_joint name="panda_joint5" initial="-0.631"/>
+    <xacro:arm_joint name="panda_joint6" initial="1.803"/>
+    <xacro:arm_joint name="panda_joint7" initial="1.559"/>
   </ros2_control>
 
   <gazebo>
