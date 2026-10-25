@@ -16,6 +16,7 @@ from collections import deque
 
 import numpy as np
 import rclpy
+from control_msgs.msg import JointTrajectoryControllerState
 from geometry_msgs.msg import Vector3
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
@@ -59,6 +60,12 @@ class HitStaticBall(Node):
         self.create_subscription(Odometry, '/ball/paddle_hit', self.on_hit, 10)
         self.create_subscription(JointState, '/joint_states', self.on_joint_state, 10)
         self.create_subscription(Odometry, '/model/ball/odometry', self.on_ball, 10)
+        # The arm controller publishes its state only once it is active: a plan sent earlier
+        # would be dropped.
+        self.controller_active = False
+        self.create_subscription(
+            JointTrajectoryControllerState, '/panda_arm_controller/controller_state',
+            self.on_controller_state, 10)
         self.have_joints = False
         self.paddle_log = deque(maxlen=1500)   # (t, paddle origin, paddle normal) from joint states
         self.ball_log = deque(maxlen=1500)     # (t, ball position, ball speed)
@@ -72,6 +79,9 @@ class HitStaticBall(Node):
 
     def now(self):
         return self.get_clock().now().nanoseconds * 1e-9
+
+    def on_controller_state(self, _):
+        self.controller_active = True
 
     def on_joint_state(self, msg):
         self.have_joints = True
@@ -138,7 +148,8 @@ class HitStaticBall(Node):
         t = self.now()
         if self.state == 'wait':
             # Wait for the sim clock, joint states and a subscriber on the plan topic.
-            if t > 1.0 and self.have_joints and self.plan_pub.get_subscription_count() > 0:
+            if t > 1.0 and self.have_joints and self.controller_active \
+                    and self.plan_pub.get_subscription_count() > 0:
                 self.get_logger().info(
                     f'run {self.run + 1}/{self.repeat}: ball parked at {self.ball.tolist()}, '
                     f'requested out speed {self.speed:.2f} m/s along {np.round(self.n, 3).tolist()}')

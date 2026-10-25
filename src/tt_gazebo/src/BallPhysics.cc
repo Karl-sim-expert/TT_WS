@@ -174,7 +174,7 @@ public:
       if (this->paddleGaveUp) {
         ignmsg << "[BallPhysics] paddle: link not found (impacts disabled)" << std::endl;
       } else if (!this->paddleValid) {
-        ignmsg << "[BallPhysics] paddle: no pose yet (robot not spawned?)" << std::endl;
+        ignmsg << "[BallPhysics] paddle: no pose yet: " << this->paddleStatus << std::endl;
       } else {
         const Vec3 d{pose->Pos().X() - this->paddleState.pos.x,
           pose->Pos().Y() - this->paddleState.pos.y, pose->Pos().Z() - this->paddleState.pos.z};
@@ -297,9 +297,18 @@ private:
         ignition::gazebo::components::Name(this->robotName),
         ignition::gazebo::components::Model());
       if (robot == ignition::gazebo::kNullEntity) {
+        this->paddleStatus = "robot model '" + this->robotName + "' not found";
         return;
       }
       ignition::gazebo::Model robotModel(robot);
+      {
+        std::string names;
+        for (const auto link : robotModel.Links(ecm)) {
+          names += ignition::gazebo::Link(link).Name(ecm).value_or("?") + " ";
+        }
+        ignmsg << "[BallPhysics] robot '" << this->robotName << "' found, links: " << names
+               << std::endl;
+      }
       this->paddleLink = robotModel.LinkByName(ecm, "paddle");
       if (this->paddleLink != ignition::gazebo::kNullEntity) {
         ignmsg << "[BallPhysics] paddle link found" << std::endl;
@@ -320,8 +329,10 @@ private:
     }
     auto linkPose = ignition::gazebo::Link(this->paddleLink).WorldPose(ecm);
     if (!linkPose) {
+      this->paddleStatus = "paddle link found but WorldPose() has no value";
       return;
     }
+    this->paddleStatus = "ok";
     ignition::math::Pose3d pose = *linkPose;
     if (this->paddleViaLink7) {
       const ignition::math::Pose3d offset(
@@ -394,6 +405,7 @@ private:
   bool paddleValid{false};
   bool paddleViaLink7{false};
   bool paddleGaveUp{false};
+  std::string paddleStatus{"not looked up yet"};
   bool havePrevPaddle{false};
   ignition::math::Pose3d prevPaddle;
   ignition::gazebo::Entity paddleLink{ignition::gazebo::kNullEntity};
