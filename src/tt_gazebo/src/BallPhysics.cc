@@ -83,19 +83,34 @@ public:
     }
     const double dt = std::chrono::duration<double>(info.dt).count();
     if (launch && dt > 0.0) {
-      // Teleport, then give the ball the requested velocity/spin with a one-step impulse
-      // (velocity commands did not behave reliably, see ball bounce debugging).
+      // Step 1: teleport to the machine and cancel whatever velocity/spin the ball had.
       this->model.SetWorldPoseCmd(ecm, ignition::math::Pose3d(this->launchPos, {}));
       const auto lin0 = this->link.WorldLinearVelocity(ecm);
       const auto ang0 = this->link.WorldAngularVelocity(ecm);
-      const ignition::math::Vector3d v1{
-        launch->linear().x(), launch->linear().y(), launch->linear().z()};
-      const ignition::math::Vector3d w1{
-        launch->angular().x(), launch->angular().y(), launch->angular().z()};
       this->ApplyVelocityChange(
-        ecm, dt, v1 - lin0.value_or(ignition::math::Vector3d::Zero),
-        w1 - ang0.value_or(ignition::math::Vector3d::Zero));
+        ecm, dt, -lin0.value_or(ignition::math::Vector3d::Zero),
+        -ang0.value_or(ignition::math::Vector3d::Zero));
+      this->launchVel = ignition::math::Vector3d(
+        launch->linear().x(), launch->linear().y(), launch->linear().z());
+      this->launchSpin = ignition::math::Vector3d(
+        launch->angular().x(), launch->angular().y(), launch->angular().z());
+      this->launchPhase = 1;
+      return;
+    }
+    if (this->launchPhase == 1 && dt > 0.0) {
+      // Step 2: velocity is now measured from the engine, so give exactly the requested change.
+      const auto lin0 = this->link.WorldLinearVelocity(ecm);
+      const auto ang0 = this->link.WorldAngularVelocity(ecm);
+      if (!lin0 || !ang0) {
+        return;
+      }
+      this->ApplyVelocityChange(ecm, dt, this->launchVel - *lin0, this->launchSpin - *ang0);
+      this->launchPhase = 0;
       this->cooldownUntil = info.simTime + std::chrono::milliseconds(50);
+      if (this->debug) {
+        ignmsg << "[BallPhysics] LAUNCH want v=" << this->launchVel << " w=" << this->launchSpin
+               << " measured before impulse v=" << *lin0 << std::endl;
+      }
       return;
     }
 
@@ -192,6 +207,9 @@ private:
   BallParams params;
   Table table;
   ignition::math::Vector3d launchPos{-1.8, 0.0, 1.0};
+  ignition::math::Vector3d launchVel;
+  ignition::math::Vector3d launchSpin;
+  int launchPhase{0};
   bool debug{false};
   std::chrono::steady_clock::duration cooldownUntil{};
   std::chrono::steady_clock::duration lastLog{};
