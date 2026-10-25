@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Publishes the table and the net as MoveIt collision objects (world frame).
 
-The pedestal is part of the URDF already. Dimensions follow the Gazebo world (ITTF table).
+The rail is part of the URDF already. Dimensions follow the Gazebo world (ITTF table).
 """
 import rclpy
 from geometry_msgs.msg import Pose

@@ -84,7 +84,7 @@ def rotation_aligning(a, b):
 
 
 class Chain:
-    """Serial chain world -> tip with revolute joints (fixed joints are folded in)."""
+    """Serial chain world -> tip with revolute and prismatic joints (fixed joints are folded in)."""
 
     def __init__(self, urdf_xml, tip='paddle', root='world'):
         robot = ET.fromstring(urdf_xml)
@@ -103,7 +103,7 @@ class Chain:
 
         self.joint_names = []
         self.lower, self.upper, self.vel_limit = [], [], []
-        # steps: (fixed transform parent->joint frame, axis or None)
+        # steps: (fixed transform parent->joint frame, axis or None, joint type)
         self._steps = []
         for j in chain:
             o = j.find('origin')
@@ -112,33 +112,46 @@ class Chain:
             t = np.eye(4)
             t[:3, :3] = rpy_to_matrix(*rpy)
             t[:3, 3] = xyz
-            if j.get('type') in ('revolute', 'continuous'):
+            if j.get('type') in ('revolute', 'continuous', 'prismatic'):
                 axis = [float(v) for v in j.find('axis').get('xyz').split()]
                 lim = j.find('limit')
                 self.joint_names.append(j.get('name'))
                 self.lower.append(float(lim.get('lower')))
                 self.upper.append(float(lim.get('upper')))
                 self.vel_limit.append(float(lim.get('velocity')))
-                self._steps.append((t, np.array(axis, float)))
+                self._steps.append((t, np.array(axis, float), j.get('type') == 'prismatic'))
             else:
-                self._steps.append((t, None))
+                self._steps.append((t, None, False))
         self.lower = np.array(self.lower)
         self.upper = np.array(self.upper)
         self.vel_limit = np.array(self.vel_limit)
         self.n = len(self.joint_names)
+        # Motion cost weights of the weighted pseudo-inverse (larger = that joint moves less).
+        # Default 1; set_weights() lets a fast rail carry the translation instead of the arm.
+        self.weights = np.ones(self.n)
+
+    def set_weights(self, weights):
+        self.weights = np.asarray(weights, float)
+
+    def set_weight_by_name(self, name, weight):
+        if name in self.joint_names:
+            self.weights[self.joint_names.index(name)] = weight
 
     def fk(self, q, with_frames=False):
         """4x4 world pose of the tip (and the per-joint (origin, axis) in world if requested)."""
         t = np.eye(4)
         k = 0
         frames = []
-        for fixed, axis in self._steps:
+        for fixed, axis, prismatic in self._steps:
             t = t @ fixed
             if axis is not None:
-                frames.append((t[:3, 3].copy(), t[:3, :3] @ axis))
-                rot = np.eye(4)
-                rot[:3, :3] = axis_angle_to_matrix(axis, q[k])
-                t = t @ rot
+                frames.append((t[:3, 3].copy(), t[:3, :3] @ axis, prismatic))
+                step = np.eye(4)
+                if prismatic:
+                    step[:3, 3] = axis * q[k]
+                else:
+                    step[:3, :3] = axis_angle_to_matrix(axis, q[k])
+                t = t @ step
                 k += 1
         return (t, frames) if with_frames else t
 
@@ -147,9 +160,12 @@ class Chain:
         t, frames = self.fk(q, with_frames=True)
         p = t[:3, 3]
         jac = np.zeros((6, self.n))
-        for i, (origin, axis) in enumerate(frames):
-            jac[:3, i] = np.cross(axis, p - origin)
-            jac[3:, i] = axis
+        for i, (origin, axis, prismatic) in enumerate(frames):
+            if prismatic:
+                jac[:3, i] = axis
+            else:
+                jac[:3, i] = np.cross(axis, p - origin)
+                jac[3:, i] = axis
         return jac
 
     def ik(self, target, q_seed, max_iter=100, pos_tol=1e-4, rot_tol=1e-3, damping=0.02,
@@ -169,8 +185,9 @@ class Chain:
             if np.linalg.norm(err[:3]) < pos_tol and np.linalg.norm(err[3:]) < rot_tol:
                 return q, True
             jac = self.jacobian(q)
-            jjt = jac @ jac.T + damping ** 2 * np.eye(6)
-            jpinv = jac.T @ np.linalg.inv(jjt)
+            winv = 1.0 / self.weights
+            jjt = (jac * winv) @ jac.T + damping ** 2 * np.eye(6)
+            jpinv = (winv[:, None] * jac.T) @ np.linalg.inv(jjt)
             dq = jpinv @ err
             null = (np.eye(self.n) - jpinv @ jac) @ (nullspace_pull * (q_pref - q))
             dq = dq + null
@@ -186,5 +203,6 @@ class Chain:
     def joint_velocity(self, q, twist, damping=0.01):
         """Joint velocity that gives the tip the 6D twist [v; omega] (damped pseudo-inverse)."""
         jac = self.jacobian(q)
-        jjt = jac @ jac.T + damping ** 2 * np.eye(6)
-        return jac.T @ np.linalg.solve(jjt, np.asarray(twist, float))
+        winv = 1.0 / self.weights
+        jjt = (jac * winv) @ jac.T + damping ** 2 * np.eye(6)
+        return (winv[:, None] * jac.T) @ np.linalg.solve(jjt, np.asarray(twist, float))

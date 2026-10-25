@@ -13,7 +13,7 @@ from tt_motion.stroke import (StrokeError, StrokeParams, build_stroke,  # noqa
                               paddle_rotation_for, smoothstep5, smoothstep5_integral)
 from urdf_utils import processed_urdf  # noqa
 
-Q_READY = np.array([-0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559])
+Q_READY = np.array([0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559])
 BALL_R, PADDLE_HALF = 0.02, 0.006
 E_PADDLE = 0.85
 
@@ -29,9 +29,11 @@ class KinematicsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.chain = Chain(processed_urdf())
+        cls.chain.set_weight_by_name('rail_joint', 0.1)
 
-    def test_chain_has_seven_joints_and_paddle_normal_faces_table(self):
-        self.assertEqual(self.chain.n, 7)
+    def test_chain_has_rail_and_seven_arm_joints_and_paddle_normal_faces_table(self):
+        self.assertEqual(self.chain.n, 8)
+        self.assertEqual(self.chain.joint_names[0], 'rail_joint')
         t = self.chain.fk(Q_READY)
         self.assertLess(t[0, 2], -0.9)            # paddle +z points toward -x (the table)
         self.assertGreater(t[0, 3], 1.0)          # paddle is in front of the base at x = 1.7
@@ -39,14 +41,14 @@ class KinematicsTest(unittest.TestCase):
     def test_jacobian_matches_finite_differences(self):
         q = Q_READY + 0.1
         jac = self.chain.jacobian(q)
-        for i in range(7):
-            dq = np.zeros(7)
+        for i in range(8):
+            dq = np.zeros(8)
             dq[i] = 1e-6
             t0, t1 = self.chain.fk(q), self.chain.fk(q + dq)
             self.assertTrue(np.allclose((t1[:3, 3] - t0[:3, 3]) / 1e-6, jac[:3, i], atol=1e-4))
 
     def test_ik_reaches_pose(self):
-        target = self.chain.fk(Q_READY + np.array([0.1, 0.1, -0.1, 0.1, 0.05, -0.1, 0.1]))
+        target = self.chain.fk(Q_READY + np.array([0.1, 0.1, 0.1, -0.1, 0.1, 0.05, -0.1, 0.1]))
         q, ok = self.chain.ik(target, Q_READY)
         self.assertTrue(ok)
         self.assertLess(np.linalg.norm(self.chain.fk(q)[:3, 3] - target[:3, 3]), 5e-4)
@@ -60,6 +62,7 @@ class StrokeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.chain = Chain(processed_urdf())
+        cls.chain.set_weight_by_name('rail_joint', 0.1)
 
     def build(self, out_speed=1.0, scale=1.0, t_hit=4.0, ball=(1.15, 0.0, 0.95), **kw):
         pos, rot, v, n = hit_setup(self.chain, ball, out_speed, **kw)
@@ -97,14 +100,20 @@ class StrokeTest(unittest.TestCase):
         self.assertTrue(np.allclose(stroke.q[-1], Q_READY, atol=1e-9))   # returns to ready
 
     def test_hit_speed_is_reduced_to_the_joint_velocity_limits(self):
-        stroke, *_ = self.build(out_speed=8.0, scale=1.0)
-        self.assertLess(stroke.hit_speed * (1 + E_PADDLE), 2.0)          # Panda cannot do 8 m/s
+        stroke, *_ = self.build(out_speed=14.0, scale=1.0, t_hit=5.0)
+        self.assertLess(stroke.hit_speed * (1 + E_PADDLE), 14.0)
         self.assertLessEqual(stroke.max_joint_vel_ratio, 0.95 + 1e-6)
 
+    def test_rail_makes_net_clearing_speeds_possible_with_real_panda_limits(self):
+        # Without the rail the Panda could only return ~1.2 m/s balls; the rail (4 m/s) carries
+        # the translation, so >= 5 m/s is reachable at vel_scale = 1.
+        stroke, *_ = self.build(out_speed=5.0, scale=1.0, t_hit=5.0)
+        self.assertGreaterEqual(stroke.hit_speed * (1 + E_PADDLE), 4.95)
+
     def test_velocity_scale_raises_the_reachable_speed(self):
-        slow, *_ = self.build(out_speed=8.0, scale=1.0)
-        fast, *_ = self.build(out_speed=8.0, scale=4.0, t_hit=4.0)
-        self.assertGreater(fast.hit_speed, 3.0 * slow.hit_speed)
+        slow, *_ = self.build(out_speed=14.0, scale=1.0, t_hit=5.0)
+        fast, *_ = self.build(out_speed=14.0, scale=2.0, t_hit=5.0)
+        self.assertGreater(fast.hit_speed, 1.5 * slow.hit_speed)
 
     def test_too_early_hit_time_is_rejected(self):
         with self.assertRaises(StrokeError):
@@ -145,6 +154,7 @@ class ImpactSimulationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.chain = Chain(processed_urdf())
+        cls.chain.set_weight_by_name('rail_joint', 0.1)
 
     def replay(self, out_speed, elevation, yaw, ball=(1.15, 0.0, 0.95), scale=4.0):
         pos, rot, v, n = hit_setup(self.chain, ball, out_speed, elevation, yaw)

@@ -13,6 +13,7 @@ panda_arm_controller:
   ros__parameters:
     use_sim_time: true
     joints:
+      - rail_joint
       - panda_joint1
       - panda_joint2
       - panda_joint3

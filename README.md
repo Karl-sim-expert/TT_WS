@@ -55,6 +55,9 @@ ros2 launch tt_bringup sim.launch.py ball_machine:=true machine_period:=3.0 mach
 
 ## M2: 정지한 공 때리기
 
+로봇은 Panda 팔이 **타구 방향(x축) 레일** 위에 올라간 구조다 (`rail_joint`, 범위 -0.5~0.6 m, 속도 4 m/s). 레일이 빠른 직선 이동을, 팔이 라켓 각도를 맡는다.
+Panda만 쓰면 정면 타구 시 공 속도가 1.2 m/s가 한계였고, 레일을 달면 오프라인 계산으로 평평한 타구 약 6.9 m/s, 위로 25° 약 5.9 m/s까지 가능하다 (위로 40°는 약 3.4 m/s, 팔 관절이 병목).
+
 설치(최초 1회): `sudo apt install ros-humble-moveit`
 
 ```bash
@@ -66,10 +69,10 @@ ros2 launch tt_bringup static_hit.launch.py
 
 | 옵션 | 기본값 | 설명 |
 | --- | --- | --- |
-| `speed` | `4.5` | 요청하는 공 속도 [m/s] (관절 속도 한계에 걸리면 자동으로 낮춘다) |
+| `speed` | `5.0` | 요청하는 공 속도 [m/s] (관절 속도 한계에 걸리면 자동으로 낮춘다) |
 | `elevation_deg` / `yaw_deg` | `25` / `0` | 공을 보낼 방향 (위로 각도 / 좌우 각도) |
 | `ball_x` `ball_y` `ball_z` | `1.15 0 0.95` | 공을 멈춰 둘 위치 [m] |
-| `vel_scale` | `4.0` | **시뮬레이션 전용** 관절 속도 한계 배율. `1.0`이 실제 Panda (공 속도 약 1.2 m/s가 한계) |
+| `vel_scale` | `1.0` | 모든 관절(레일 4 m/s, Panda 2.4~2.9 rad/s) 속도 한계 배율. 1보다 크면 시뮬레이션 전용 가상 팔 |
 | `repeat` | `1` | 반복 횟수 (끝에 평균/최대 오차 요약) |
 | `lead` | `4.0` | 계획 후 타격까지 시간 [s] |
 

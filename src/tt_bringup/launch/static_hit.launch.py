@@ -46,12 +46,13 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('rviz', default_value='true'),
-        # Sim-only "virtual arm": multiplier on the Panda joint velocity limits (1.0 = real Panda).
-        DeclareLaunchArgument('vel_scale', default_value='4.0'),
+        # Multiplier on all joint velocity limits (rail 4 m/s, Panda 2.4-2.9 rad/s). 1.0 = as built;
+        # >1 is a sim-only 'virtual arm' for stronger hits.
+        DeclareLaunchArgument('vel_scale', default_value='1.0'),
         DeclareLaunchArgument('ball_x', default_value='1.15'),
         DeclareLaunchArgument('ball_y', default_value='0.0'),
         DeclareLaunchArgument('ball_z', default_value='0.95'),
-        DeclareLaunchArgument('speed', default_value='4.5'),          # requested ball speed [m/s]
+        DeclareLaunchArgument('speed', default_value='5.0'),          # requested ball speed [m/s]
         DeclareLaunchArgument('elevation_deg', default_value='25.0'),
         DeclareLaunchArgument('yaw_deg', default_value='0.0'),
         DeclareLaunchArgument('lead', default_value='4.0'),           # s from plan to impact

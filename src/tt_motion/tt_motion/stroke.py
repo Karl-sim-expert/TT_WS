@@ -45,8 +45,9 @@ def paddle_rotation_for(chain, q_ready, normal):
 
 @dataclass
 class StrokeParams:
-    d_back: float = 0.20          # backswing distance before the hit [m]
-    d_follow: float = 0.15        # follow-through distance after the hit [m]
+    d_back: float = 0.20          # minimum backswing distance before the hit [m]
+    d_follow: float = 0.15        # minimum follow-through distance after the hit [m]
+    min_ramp: float = 0.15        # shortest accel / decel ramp [s]: distance grows as s * ramp / 2
     sample_dt: float = 0.005      # swing sampling period [s]
     prep_dt: float = 0.02         # sampling period of the slow moves [s]
     prep_vel_frac: float = 0.5    # slow moves use this fraction of the joint velocity limit
@@ -121,36 +122,53 @@ def build_stroke(chain, q_start, q_ready, hit_pos, hit_rot, hit_vel, t_hit, para
         raise StrokeError('hit pose is not reachable (IK failed at the hit point)')
 
     def grid_solutions(xs):
+        """Solutions along xs, stopping at the first unreachable point (the arm's reach limit)."""
         out = []
         q_prev = q_hit
         for x in xs:
             q_i, ok_i = chain.ik(pose_at(x), q_prev, q_pref=q_ready)
             if not ok_i:
-                raise StrokeError(f'IK failed {x:+.3f} m from the hit point on the swing line')
+                break
             out.append(q_i)
             q_prev = q_i
         return out
 
-    nb = int(np.ceil(params.d_back / params.grid_step))
-    nf = int(np.ceil(params.d_follow / params.grid_step))
-    x_back = -params.d_back * np.linspace(0.0, 1.0, nb + 1)[1:]       # 0 -> -d_back
-    x_fore = params.d_follow * np.linspace(0.0, 1.0, nf + 1)[1:]      # 0 -> +d_follow
-    grid_x = np.concatenate([x_back[::-1], [0.0], x_fore])
-    grid_q = np.array(
-        grid_solutions(x_back)[::-1] + [q_hit] + grid_solutions(x_fore))
+    def distances(s):
+        # Faster hits need longer ramps (bounded acceleration): d = max(d_min, s * ramp / 2).
+        return (max(params.d_back, 0.5 * s * params.min_ramp),
+                max(params.d_follow, 0.5 * s * params.min_ramp))
+
+    d_back_max, d_follow_max = distances(speed)
+    nb = int(np.ceil(d_back_max / params.grid_step))
+    nf = int(np.ceil(d_follow_max / params.grid_step))
+    x_back = -d_back_max * np.linspace(0.0, 1.0, nb + 1)[1:]          # 0 -> -d_back
+    x_fore = d_follow_max * np.linspace(0.0, 1.0, nf + 1)[1:]         # 0 -> +d_follow
+    sol_back = grid_solutions(x_back)
+    sol_fore = grid_solutions(x_fore)
+    reach_back = 0.0 if not sol_back else -x_back[len(sol_back) - 1]
+    reach_fore = 0.0 if not sol_fore else x_fore[len(sol_fore) - 1]
+    if reach_back < params.d_back or reach_fore < params.d_follow:
+        raise StrokeError(
+            f'swing line leaves the workspace (reach {reach_back:.2f} m back, {reach_fore:.2f} m '
+            f'forward; need {params.d_back:.2f} / {params.d_follow:.2f} m)')
+    grid_x = np.concatenate([x_back[:len(sol_back)][::-1], [0.0], x_fore[:len(sol_fore)]])
+    grid_q = np.array(sol_back[::-1] + [q_hit] + sol_fore)
+    # The ramps must fit inside the reachable part of the line: s <= 2 d / ramp.
+    speed_by_reach = 2.0 * min(reach_back, reach_fore) / params.min_ramp
 
     def q_at(x):
         return np.array([np.interp(x, grid_x, grid_q[:, j]) for j in range(grid_q.shape[1])])
 
     def swing_samples(s):
-        t1 = 2.0 * params.d_back / s
-        t2 = 2.0 * params.d_follow / s
+        d_back, d_follow = distances(s)
+        t1 = 2.0 * d_back / s
+        t2 = 2.0 * d_follow / s
         n1 = max(2, int(np.ceil(t1 / params.sample_dt)))
         n2 = max(2, int(np.ceil(t2 / params.sample_dt)))
         tau1 = np.linspace(0.0, 1.0, n1 + 1)
         tau2 = np.linspace(0.0, 1.0, n2 + 1)
         # position along the line and speed: accel ramp ends at x = 0, decel ramp starts there
-        x1 = -params.d_back + s * t1 * smoothstep5_integral(tau1)
+        x1 = -d_back + s * t1 * smoothstep5_integral(tau1)
         v1 = s * smoothstep5(tau1)
         x2 = s * t2 * (tau2 - smoothstep5_integral(tau2))
         v2 = s * (1.0 - smoothstep5(tau2))
@@ -165,7 +183,7 @@ def build_stroke(chain, q_start, q_ready, hit_pos, hit_rot, hit_vel, t_hit, para
         return t1, t2, ts, q_s, qd_s
 
     # Joint speeds are proportional to the hit speed: scale it down once if a limit is exceeded.
-    s = speed
+    s = min(speed, speed_by_reach)
     for attempt in range(params.max_retries + 1):
         t1, t2, ts, q_swing, qd_swing = swing_samples(s)
         ratio = float(np.max(np.abs(qd_swing) / vlim))

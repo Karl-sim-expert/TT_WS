@@ -24,7 +24,7 @@ from tt_msgs.msg import StrokePlan
 from tt_motion.kinematics import Chain, matrix_to_quat
 from tt_motion.stroke import paddle_rotation_for
 
-READY = [-0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
+READY = [0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
 BALL_RADIUS = 0.02
 PADDLE_HALF_THICKNESS = 0.006
 TIMING_LIMIT = 0.010  # s
