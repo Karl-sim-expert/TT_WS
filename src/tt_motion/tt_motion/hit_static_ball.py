@@ -39,7 +39,11 @@ class HitStaticBall(Node):
                 ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
                 ('ball_x', 1.15), ('ball_y', 0.0), ('ball_z', 0.95),
                 ('speed', 1.0), ('elevation_deg', 25.0), ('yaw_deg', 0.0),
-                ('paddle_restitution', 0.85), ('lead', 4.0), ('repeat', 1), ('settle', 6.0)):
+                ('paddle_restitution', 0.85), ('lead', 4.0), ('repeat', 1), ('settle', 6.0),
+                # random parking: each run samples the ball uniformly in this box
+                ('random_pos', False), ('seed', 0),
+                ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.2), ('y_max', 0.2),
+                ('z_min', 0.85), ('z_max', 1.15)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))
@@ -49,6 +53,10 @@ class HitStaticBall(Node):
         # direction from the robot side (x > 0) toward the opponent half (-x)
         self.n = np.array([-math.cos(el) * math.cos(yaw), -math.cos(el) * math.sin(yaw),
                            math.sin(el)])
+        self.random_pos = bool(g('random_pos'))
+        self.box = [(float(g(a + '_min')), float(g(a + '_max'))) for a in 'xyz']
+        seed = int(g('seed'))
+        self.rng = np.random.default_rng(seed if seed != 0 else None)
         self.speed = float(g('speed'))
         self.e = float(g('paddle_restitution'))
         self.lead = float(g('lead'))
@@ -150,8 +158,10 @@ class HitStaticBall(Node):
             # Wait for the sim clock, joint states and a subscriber on the plan topic.
             if t > 1.0 and self.have_joints and self.controller_active \
                     and self.plan_pub.get_subscription_count() > 0:
+                if self.random_pos:
+                    self.ball = np.array([self.rng.uniform(lo, hi) for lo, hi in self.box])
                 self.get_logger().info(
-                    f'run {self.run + 1}/{self.repeat}: ball parked at {self.ball.tolist()}, '
+                    f'run {self.run + 1}/{self.repeat}: ball parked at {np.round(self.ball, 3).tolist()}, '
                     f'requested out speed {self.speed:.2f} m/s along {np.round(self.n, 3).tolist()}')
                 self.hold_ball()
                 self.state, self.state_since = 'park', t
@@ -194,7 +204,7 @@ class HitStaticBall(Node):
         ok = abs(dt) <= TIMING_LIMIT
         self.results.append((dt, ang, speed / self.speed))
         self.get_logger().info(
-            f'HIT: timing error {1000 * dt:+.1f} ms ({"OK" if ok else "FAIL"}, limit '
+            f'HIT run {self.run + 1}: ball at {np.round(self.ball, 3).tolist()}, timing error {1000 * dt:+.1f} ms ({"OK" if ok else "FAIL"}, limit '
             f'{1000 * TIMING_LIMIT:.0f} ms), direction error {ang:.1f} deg, out speed '
             f'{speed:.2f} m/s ({100 * speed / self.speed:.0f}% of requested), '
             f'ball pos {[round(c, 3) for c in (msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z)]}')

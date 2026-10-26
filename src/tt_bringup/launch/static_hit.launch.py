@@ -42,6 +42,10 @@ def generate_launch_description():
             'ball_x': num('ball_x'), 'ball_y': num('ball_y'), 'ball_z': num('ball_z'),
             'speed': num('speed'), 'elevation_deg': num('elevation_deg'),
             'yaw_deg': num('yaw_deg'), 'lead': num('lead'),
+            'random_pos': ParameterValue(LaunchConfiguration('random_pos'), value_type=bool),
+            'seed': ParameterValue(LaunchConfiguration('seed'), value_type=int),
+            'x_min': num('x_min'), 'x_max': num('x_max'), 'y_min': num('y_min'),
+            'y_max': num('y_max'), 'z_min': num('z_min'), 'z_max': num('z_max'),
             'repeat': ParameterValue(LaunchConfiguration('repeat'), value_type=int)}])
 
     return LaunchDescription([
@@ -57,5 +61,15 @@ def generate_launch_description():
         DeclareLaunchArgument('yaw_deg', default_value='0.0'),
         DeclareLaunchArgument('lead', default_value='4.0'),           # s from plan to impact
         DeclareLaunchArgument('repeat', default_value='1'),
+        # random_pos:=true samples the parked ball in the box below on every repeat (seed 0 = new
+        # random each launch). The default box is where the 5 m/s hit is reachable.
+        DeclareLaunchArgument('random_pos', default_value='false'),
+        DeclareLaunchArgument('seed', default_value='0'),
+        DeclareLaunchArgument('x_min', default_value='1.0'),
+        DeclareLaunchArgument('x_max', default_value='1.4'),
+        DeclareLaunchArgument('y_min', default_value='-0.2'),
+        DeclareLaunchArgument('y_max', default_value='0.2'),
+        DeclareLaunchArgument('z_min', default_value='0.85'),
+        DeclareLaunchArgument('z_max', default_value='1.15'),
         sim, executor, test,
     ])
