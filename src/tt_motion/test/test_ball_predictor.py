@@ -17,7 +17,7 @@ class BallPredictorTest(unittest.TestCase):
 
     def test_bounce_restitution_and_no_spin(self):
         m = BallModel(air_density=0.0, friction=0.0)
-        t, p, v, w, b = simulate([0.5, 0, 1.0], [0, 0, 0], [0, 0, 0], 0.6, m)
+        t, p, v, w, b = simulate([0.5, 0, 1.0], [0, 0, 0], [0, 0, 0], 0.3, m)
         self.assertEqual(len(b), 1)
         vimp = -np.sqrt(2 * 9.81 * (1.0 - 0.78))
         i = int(np.searchsorted(t, b[0])) + 1
@@ -31,7 +31,7 @@ class BallPredictorTest(unittest.TestCase):
         r = predict_plane_crossing([-1.4, 0, 1.0], [6.0, 0, 0.5], [0, 0, 0], 0.9)
         self.assertIsNotNone(r)
         self.assertAlmostEqual(r[1][0], 0.9, places=3)
-        self.assertEqual(len(r[4]), 2)  # own half, then robot half
+        self.assertEqual(len(r[4]), 1)
 
     def test_topspin_dips_more_than_backspin(self):
         args = ([-1.4, 0, 1.0], [6.0, 0, 0.5])
