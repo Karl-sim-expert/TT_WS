@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from tt_motion.ball_predictor import BallModel, fast_landing, simulate, surface_bounce
+from tt_motion.ball_predictor import BallModel, fast_flight, fast_landing, surface_bounce
 
 
 @dataclass
@@ -119,7 +119,7 @@ def plan_return(p, v, w, params=None, model=None):
     string with the reason it cannot be returned."""
     params = params or ReturnParams()
     model = model or BallModel()
-    ts, ps, vs, ws, bounces = simulate(p, v, w, params.flight_time, model)
+    ts, ps, vs, ws, bounces = fast_flight(p, v, w, params.flight_time, model)
     robot_bounces = [b for b in bounces
                      if 0.0 < ps[int(np.searchsorted(ts, b))][0] < model.table_half_x]
     if not robot_bounces:

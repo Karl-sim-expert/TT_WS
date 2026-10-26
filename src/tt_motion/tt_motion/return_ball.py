@@ -9,11 +9,14 @@ including the bounce (return_planner.plan_return), publishes one StrokePlan, the
 result: timing of the paddle hit and where the returned ball lands.
 """
 import math
+from collections import deque
 
 import numpy as np
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
+import time
 from tt_msgs.msg import StrokePlan
 
 from tt_motion.kinematics import Chain, matrix_to_quat
@@ -44,6 +47,8 @@ class ReturnBall(Node):
         self.plan_pub = self.create_publisher(StrokePlan, 'stroke_plan', 10)
         self.create_subscription(Odometry, '/model/ball/odometry', self.on_ball, 10)
         self.create_subscription(Odometry, '/ball/paddle_hit', self.on_paddle_hit, 10)
+        self.create_subscription(JointState, '/joint_states', self.on_joint_state, 50)
+        self.paddle_log = deque(maxlen=800)   # (sim time, paddle origin, paddle normal) from FK
         self.armed_after = 0.0
         self.plan = None
         self.plan_hit_abs = None
@@ -91,12 +96,37 @@ class ReturnBall(Node):
                 f'(odometry twist says {np.round(v_odom, 2).tolist()})')
             self.on_incoming(t, p, v, w)
 
+    def on_joint_state(self, msg):
+        pos = dict(zip(msg.name, msg.position))
+        if all(n in pos for n in self.chain.joint_names):
+            tf = self.chain.fk(np.array([pos[n] for n in self.chain.joint_names]))
+            self.paddle_log.append((self.now(), tf[:3, 3].copy(), tf[:3, 2].copy()))
+
+    def diagnose(self, t_contact):
+        """Where was the paddle (joint states + FK) at the planned time and at the actual contact?"""
+        if len(self.paddle_log) < 3:
+            return
+        plan = self.plan
+        for label, t in (('planned time', self.plan_hit_abs), ('contact', t_contact)):
+            i = min(range(len(self.paddle_log)), key=lambda k: abs(self.paddle_log[k][0] - t))
+            lo, hi = max(i - 5, 0), min(i + 5, len(self.paddle_log) - 1)
+            ta, pa, _ = self.paddle_log[lo]
+            tb, pb, _ = self.paddle_log[hi]
+            vel = (pb - pa) / max(tb - ta, 1e-6)
+            _, pos, nrm = self.paddle_log[i]
+            tilt = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(nrm, plan.paddle_normal))))))
+            self.get_logger().info(
+                f'DIAG {label}: paddle pos error {1000 * np.linalg.norm(pos - plan.paddle_pos):.0f} mm '
+                f'({np.round(1000 * (pos - plan.paddle_pos), 0).tolist()}), normal error {tilt:.1f} deg, '
+                f'speed {np.linalg.norm(vel):.2f} m/s (planned {plan.paddle_speed:.2f}), '
+                f'along plan normal {float(np.dot(vel, plan.paddle_normal)):.2f} m/s')
+
     def on_incoming(self, t, p, v, w):
         self.shots += 1
         spin = w if self.get_parameter('spin_from_odometry').value else np.zeros(3)
-        started = self.now()
+        started = time.monotonic()
         plan = plan_return(p, v, spin, self.params)
-        latency = self.now() - started
+        latency = time.monotonic() - started
         self.armed_after = t + float(self.get_parameter('cooldown').value)
         if isinstance(plan, str):
             self.get_logger().warn(
@@ -127,7 +157,7 @@ class ReturnBall(Node):
         self.get_logger().info(
             f'shot {self.shots}: ball v={np.round(v, 2).tolist()}; hit at '
             f'{np.round(plan.ball_pos, 2).tolist()} in {remaining:.2f} s (planning took '
-            f'{1000 * latency:.0f} ms), paddle {plan.paddle_speed:.2f} m/s along '
+            f'{1000 * latency:.0f} ms wall time), paddle {plan.paddle_speed:.2f} m/s along '
             f'{np.round(plan.paddle_normal, 2).tolist()}, expected landing '
             f'{np.round(plan.landing[:2], 2).tolist()}')
         if remaining < 0.3:
@@ -145,6 +175,7 @@ class ReturnBall(Node):
         dt = t - self.plan_hit_abs
         self.hit_done = True
         self.hits += 1
+        self.diagnose(t)
         limit = float(self.get_parameter('timing_limit').value)
         self.get_logger().info(
             f'HIT {self.hits}/{self.planned}: timing error {1000 * dt:+.1f} ms '

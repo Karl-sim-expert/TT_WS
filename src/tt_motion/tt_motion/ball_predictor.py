@@ -141,3 +141,51 @@ def fast_landing(p, v, w, model=None, dt=0.004, t_max=1.2):
         px, py, pz = npx, npy, npz
         t += dt
     return None, net_z
+
+
+def fast_flight(p, v, w, t_end, model=None, dt=0.004):
+    """Plain-float version of simulate() (midpoint rule). Same return values; ~20x faster."""
+    m = model or BallModel()
+    px, py, pz = (float(a) for a in p)
+    vx, vy, vz = (float(a) for a in v)
+    wv = np.array(w, float)
+    area = np.pi * m.radius ** 2
+    kd = 0.5 * m.air_density * m.drag_coeff * area / m.mass
+    kl = 0.5 * m.air_density * area / m.mass
+    floor = m.table_z + m.radius
+    ts, ps, vs, ws, bounces = [0.0], [(px, py, pz)], [(vx, vy, vz)], [tuple(wv)], []
+
+    def acc(vx, vy, vz, wx, wy, wz, wn):
+        sp = (vx * vx + vy * vy + vz * vz) ** 0.5
+        if sp < 1e-6:
+            return 0.0, 0.0, -9.81
+        ax, ay, az = -kd * sp * vx, -kd * sp * vy, -kd * sp * vz - 9.81
+        cx, cy, cz = wy * vz - wz * vy, wz * vx - wx * vz, wx * vy - wy * vx
+        cn = (cx * cx + cy * cy + cz * cz) ** 0.5
+        if cn > 1e-9:
+            f = kl * min(m.lift_slope * m.radius * wn / sp, m.lift_max) * sp * sp / cn
+            ax, ay, az = ax + f * cx, ay + f * cy, az + f * cz
+        return ax, ay, az
+
+    t = 0.0
+    while t < t_end - 1e-12:
+        h = min(dt, t_end - t)
+        wx, wy, wz = wv
+        wn = float(np.linalg.norm(wv))
+        ax, ay, az = acc(vx, vy, vz, wx, wy, wz, wn)
+        bx, by, bz = acc(vx + 0.5 * h * ax, vy + 0.5 * h * ay, vz + 0.5 * h * az, wx, wy, wz, wn)
+        npx, npy, npz = px + h * (vx + 0.5 * h * ax), py + h * (vy + 0.5 * h * ay), \
+            pz + h * (vz + 0.5 * h * az)
+        nvx, nvy, nvz = vx + h * bx, vy + h * by, vz + h * bz
+        if (vz < 0 and npz <= floor and abs(npx) <= m.table_half_x
+                and abs(npy) <= m.table_half_y):
+            f = min(max((pz - floor) / max(pz - npz, 1e-12), 0.0), 1.0)
+            npx, npy, npz = px + f * (npx - px), py + f * (npy - py), floor
+            vnew, wv = surface_bounce(m, m.restitution, m.friction, np.array([0, 0, 1.0]),
+                                      np.array([nvx, nvy, nvz]), wv)
+            nvx, nvy, nvz = (float(a) for a in vnew)
+            bounces.append(t + h * f)
+        px, py, pz, vx, vy, vz = npx, npy, npz, nvx, nvy, nvz
+        t += h
+        ts.append(t); ps.append((px, py, pz)); vs.append((vx, vy, vz)); ws.append(tuple(wv))
+    return np.array(ts), np.array(ps), np.array(vs), np.array(ws), bounces
