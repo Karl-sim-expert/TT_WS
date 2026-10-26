@@ -20,7 +20,7 @@ import time
 from tt_msgs.msg import StrokePlan
 
 from tt_motion.kinematics import Chain, matrix_to_quat
-from tt_motion.return_planner import ReturnParams, plan_return
+from tt_motion.return_planner import ReturnParams, contact, plan_return
 from tt_motion.stroke import paddle_rotation_for
 
 READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
@@ -48,6 +48,7 @@ class ReturnBall(Node):
         self.create_subscription(Odometry, '/model/ball/odometry', self.on_ball, 10)
         self.create_subscription(Odometry, '/ball/paddle_hit', self.on_paddle_hit, 10)
         self.create_subscription(JointState, '/joint_states', self.on_joint_state, 50)
+        self.ball_hist = deque(maxlen=400)    # (sim time, ball position)
         self.paddle_log = deque(maxlen=800)   # (sim time, paddle origin, paddle normal) from FK
         self.armed_after = 0.0
         self.plan = None
@@ -71,6 +72,7 @@ class ReturnBall(Node):
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         t = stamp if stamp > 0.0 else self.now()
         p, v_odom, w = self.state_of(msg)
+        self.ball_hist.append((t, p.copy()))
         if self.prev is None:
             self.get_logger().info(
                 f'ball odometry received (t={t:.2f}, pos {np.round(p, 2).tolist()}); '
@@ -120,6 +122,26 @@ class ReturnBall(Node):
                 f'({np.round(1000 * (pos - plan.paddle_pos), 0).tolist()}), normal error {tilt:.1f} deg, '
                 f'speed {np.linalg.norm(vel):.2f} m/s (planned {plan.paddle_speed:.2f}), '
                 f'along plan normal {float(np.dot(vel, plan.paddle_normal)):.2f} m/s')
+
+    def diagnose_ball(self, t_contact, v_out):
+        """Real ball state just before the impact vs the prediction, and what the contact model says."""
+        early = [e for e in self.ball_hist if t_contact - 0.020 <= e[0] <= t_contact - 0.004]
+        if len(early) < 2:
+            return
+        v_act = (early[-1][1] - early[0][1]) / max(early[-1][0] - early[0][0], 1e-6)
+        plan = self.plan
+        model_out, _ = contact(v_act, plan.w_in, plan.paddle_normal, plan.paddle_speed, self.params, None)
+        i = min(range(len(self.paddle_log)), key=lambda k: abs(self.paddle_log[k][0] - t_contact)) \
+            if self.paddle_log else None
+        geom = ''
+        if i is not None:
+            _, ppos, pnrm = self.paddle_log[i]
+            d = early[-1][1] - ppos
+            h = float(np.dot(d, pnrm))
+            geom = f', ball {1000 * h:.0f} mm in front of the paddle, {1000 * np.linalg.norm(d - h * pnrm):.0f} mm off its axis'
+        self.get_logger().info(
+            f'DIAG ball before impact: v {np.round(v_act, 2).tolist()} (predicted {np.round(plan.v_in, 2).tolist()}){geom}; '
+            f'contact model with the real v gives out {np.round(model_out, 2).tolist()}, actual out {np.round(v_out, 2).tolist()}')
 
     def on_incoming(self, t, p, v, w):
         self.shots += 1
@@ -176,6 +198,7 @@ class ReturnBall(Node):
         self.hit_done = True
         self.hits += 1
         self.diagnose(t)
+        self.diagnose_ball(t, v)
         limit = float(self.get_parameter('timing_limit').value)
         self.get_logger().info(
             f'HIT {self.hits}/{self.planned}: timing error {1000 * dt:+.1f} ms '
