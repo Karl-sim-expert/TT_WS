@@ -27,7 +27,7 @@ class ReturnBall(Node):
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 1.5),
                 ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
-                ('spin_from_odometry', True)):
+                ('spin_from_odometry', False)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.params = ReturnParams(
@@ -42,6 +42,7 @@ class ReturnBall(Node):
         self.plan_hit_abs = None
         self.hit_done = False
         self.prev = None
+        self.prev_vz = None
         self.landed = False
         self.shots = self.planned = self.hits = self.returned = 0
         self.get_logger().info('return_ball ready: waiting for balls from the machine')
@@ -55,14 +56,32 @@ class ReturnBall(Node):
         return (np.array([p.x, p.y, p.z]), np.array([v.x, v.y, v.z]), np.array([w.x, w.y, w.z]))
 
     def on_ball(self, msg):
-        t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        p, v, w = self.state_of(msg)
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        t = stamp if stamp > 0.0 else self.now()
+        p, v_odom, w = self.state_of(msg)
+        if self.prev is None:
+            self.get_logger().info(
+                f'ball odometry received (t={t:.2f}, pos {np.round(p, 2).tolist()}); '
+                'waiting for a shot')
+        # Velocity from position differences: the odometry twist may be in the body frame.
+        v = v_odom
+        if self.prev is not None and t - self.prev[0] > 0.004:
+            v = (p - self.prev[1]) / (t - self.prev[0])
+            self.prev = (t, p, v)
+        elif self.prev is None:
+            self.prev = (t, p, v)
+            return
+        else:
+            return
         if self.plan is not None:
             self.watch_landing(t, p, v)
+            self.prev_vz = v[2]
         elif (t >= self.armed_after and p[0] < self.get_parameter('trigger_x').value
               and v[0] > self.get_parameter('trigger_vx').value):
+            self.get_logger().info(
+                f'ball launched: pos {np.round(p, 2).tolist()}, v {np.round(v, 2).tolist()} '
+                f'(odometry twist says {np.round(v_odom, 2).tolist()})')
             self.on_incoming(t, p, v, w)
-        self.prev = (t, p, v)
 
     def on_incoming(self, t, p, v, w):
         self.shots += 1
@@ -92,7 +111,7 @@ class ReturnBall(Node):
         msg.stroke_type = StrokePlan.TOPSPIN_DRIVE
         self.plan_pub.publish(msg)
         self.plan, self.plan_hit_abs, self.hit_done, self.planned = plan, hit_abs, False, self.planned + 1
-        self.landed = False
+        self.landed, self.prev_vz = False, None
         self.get_logger().info(
             f'shot {self.shots}: ball v={np.round(v, 2).tolist()}; hit at '
             f'{np.round(plan.ball_pos, 2).tolist()} in {remaining:.2f} s (planning took '
@@ -122,8 +141,8 @@ class ReturnBall(Node):
 
     def watch_landing(self, t, p, v):
         """First table bounce after the hit = where the returned ball lands."""
-        if self.hit_done and not self.landed and self.prev is not None \
-                and self.prev[2][2] < 0.0 <= v[2] and p[2] < 0.82:
+        if self.hit_done and not self.landed and self.prev_vz is not None \
+                and self.prev_vz < 0.0 <= v[2] and p[2] < 0.82:
             self.landed = True
             on_table = abs(p[0]) <= 1.37 and abs(p[1]) <= 0.7625 and p[0] < 0.0
             err = math.hypot(p[0] - self.params.target[0], p[1] - self.params.target[1])
