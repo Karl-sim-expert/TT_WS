@@ -88,3 +88,21 @@ ros2 launch tt_bringup static_hit.launch.py
 - MoveIt (선택): `ros2 launch tt_bringup sim.launch.py moveit:=true` 후 `ros2 launch tt_moveit_config move_group.launch.py rviz:=true` (RViz2 MotionPlanning).
   고속 스윙은 `tt_motion`이 직접 만들고, MoveIt은 설정·IK·충돌 검사·느린 이동에 쓴다 (설계 문서 5절).
 - 클라우드 없이 계산만 검증: `python3 -m unittest discover -s src/tt_motion/test` (FK/IK, 스윙 궤적, 관절 한계)
+
+## M3: 날아오는 공 되받아치기 (초안, 정답 공 위치 사용 — 비전은 아직 없음)
+
+```bash
+cd ~/tt_ws && colcon build --symlink-install && source install/setup.bash
+ros2 launch tt_bringup return_ball.launch.py
+```
+볼머신이 공을 쏘면(`machine_period` 초마다) `return_ball` 노드가 공이 출발한 순간의 위치·속도로 비행(공기저항, 스핀, 바운스)을 예측하고,
+바운스 뒤 라켓이 닿을 수 있는 타점과 시각, 라켓 방향·속도를 정해 `StrokePlan`을 한 번 보낸다(M2 `stroke_executor`가 그대로 스윙).
+돌려보낼 공은 상대 코트 `target_x`/`target_y`(기본 -0.7, 0)에 떨어지도록 속도를 계산한다(네트 통과 확인 포함).
+터미널에 샷마다 아래가 나온다.
+- `shot N: ... hit at ... in X s` — 계획(타점, 남은 시간, 라켓 속도, 예상 낙하점)
+- `HIT k/N: timing error ... ms` — 라켓이 공을 친 시각 오차
+- `RESULT: landed at (...), error ... cm, ON opponent half | returned R/N shots` — 돌려보낸 공의 실제 낙하점
+- `cannot return (...)` — 이 공은 도달 불가라 포기(이유 표시), `MISS: ...` — 헛스윙
+
+옵션: `machine_speed`(기본 6.0, 6 m/s 미만은 네트를 넘는 샷이 없음), `machine_period`(5.0), `machine_spin_max`(0 = 스핀 없음), `target_x`, `target_y`, `min_lead`.
+오프라인 검증(ROS 불필요): `python3 -m unittest discover -s src/tt_motion/test`

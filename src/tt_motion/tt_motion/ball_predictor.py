@@ -96,3 +96,48 @@ def predict_plane_crossing(p0, v0, w0, x_plane, model=None, t_max=2.0, dt=0.002)
             tc = ts[i - 1] + f * (ts[i] - ts[i - 1])
             return tc, lerp(ps), lerp(vs), lerp(ws), [b for b in bounces if b <= tc]
     return None
+
+
+def fast_landing(p, v, w, model=None, dt=0.004, t_max=1.2):
+    """Plain-float version of simulate() that stops at the first table bounce (planner inner loop).
+
+    Returns (landing position, height when crossing x = 0 going -x or None) or (None, None).
+    """
+    m = model or BallModel()
+    px, py, pz = (float(a) for a in p)
+    vx, vy, vz = (float(a) for a in v)
+    wx, wy, wz = (float(a) for a in w)
+    area = np.pi * m.radius ** 2
+    kd = 0.5 * m.air_density * m.drag_coeff * area / m.mass
+    kl = 0.5 * m.air_density * area / m.mass
+    wn = (wx * wx + wy * wy + wz * wz) ** 0.5
+    floor = m.table_z + m.radius
+    net_z = None
+
+    def acc(vx, vy, vz):
+        sp = (vx * vx + vy * vy + vz * vz) ** 0.5
+        if sp < 1e-6:
+            return 0.0, 0.0, -9.81
+        ax, ay, az = -kd * sp * vx, -kd * sp * vy, -kd * sp * vz - 9.81
+        cx, cy, cz = wy * vz - wz * vy, wz * vx - wx * vz, wx * vy - wy * vx
+        cn = (cx * cx + cy * cy + cz * cz) ** 0.5
+        if cn > 1e-9:
+            f = kl * min(m.lift_slope * m.radius * wn / sp, m.lift_max) * sp * sp / cn
+            ax, ay, az = ax + f * cx, ay + f * cy, az + f * cz
+        return ax, ay, az
+
+    t = 0.0
+    while t < t_max:
+        ax, ay, az = acc(vx, vy, vz)
+        mx, my, mz = vx + 0.5 * dt * ax, vy + 0.5 * dt * ay, vz + 0.5 * dt * az
+        bx, by, bz = acc(mx, my, mz)
+        npx, npy, npz = px + dt * mx, py + dt * my, pz + dt * mz
+        vx, vy, vz = vx + dt * bx, vy + dt * by, vz + dt * bz
+        if px > 0.0 >= npx and net_z is None:
+            net_z = pz + (npz - pz) * (px / (px - npx))
+        if vz < 0 and npz <= floor and abs(npx) <= m.table_half_x and abs(npy) <= m.table_half_y:
+            f = (pz - floor) / max(pz - npz, 1e-12)
+            return np.array([px + f * (npx - px), py + f * (npy - py), floor]), net_z
+        px, py, pz = npx, npy, npz
+        t += dt
+    return None, net_z

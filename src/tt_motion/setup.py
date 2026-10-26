@@ -20,6 +20,7 @@ setup(
         'console_scripts': [
             'stroke_executor = tt_motion.stroke_executor:main',
             'hit_static_ball = tt_motion.hit_static_ball:main',
+            'return_ball = tt_motion.return_ball:main',
         ],
     },
 )

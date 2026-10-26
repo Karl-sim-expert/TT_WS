@@ -38,6 +38,8 @@ class StrokeExecutor(Node):
         self.declare_parameter('rail_joint', 'rail_joint')
         self.declare_parameter('rail_y_joint', 'rail_y_joint')
         self.declare_parameter('rail_weight', 0.1)   # < 1: the rail carries the translation
+        self.declare_parameter('min_move_time', 0.5)  # shortest slow move before the backswing [s]
+        self.declare_parameter('prep_vel_frac', 0.5)  # slow moves use this fraction of the velocity limit
         self.declare_parameter('d_back', 0.20)
         self.declare_parameter('d_follow', 0.15)
         self.declare_parameter('trajectory_topic', '/panda_arm_controller/joint_trajectory')
@@ -54,7 +56,9 @@ class StrokeExecutor(Node):
         self.params = StrokeParams(
             d_back=self.get_parameter('d_back').value,
             d_follow=self.get_parameter('d_follow').value,
-            vel_scale=self.get_parameter('vel_scale').value)
+            vel_scale=self.get_parameter('vel_scale').value,
+            min_move_time=self.get_parameter('min_move_time').value,
+            prep_vel_frac=self.get_parameter('prep_vel_frac').value)
 
         self.q = None
         self.create_subscription(JointState, '/joint_states', self.on_joint_state, 10)
