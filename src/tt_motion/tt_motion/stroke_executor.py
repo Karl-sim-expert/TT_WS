@@ -80,7 +80,10 @@ class StrokeExecutor(Node):
 
     def go_ready(self):
         """Optional: bring the arm to q_ready once, so strokes start from the known pose."""
-        if self.ready_done or self.q is None or self.pub.get_subscription_count() == 0:
+        if self.ready_done or self.q is None:
+            return
+        if self.pub.get_subscription_count() == 0:
+            self.get_logger().info('waiting for the arm controller to listen on the trajectory topic')
             return
         self.ready_done = True
         dq = np.abs(self.q - self.q_ready)
