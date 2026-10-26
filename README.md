@@ -79,7 +79,7 @@ ros2 launch tt_bringup static_hit.launch.py
 예: `ros2 launch tt_bringup static_hit.launch.py speed:=3.0 elevation_deg:=30 repeat:=5`
 
 공 위치를 매 반복마다 무작위로: `ros2 launch tt_bringup static_hit.launch.py repeat:=10 random_pos:=true`
-(기본 범위 x∈[1.0,1.4], y∈[-0.2,0.2], z∈[0.85,1.15] — 5 m/s 타격이 도달 가능한 영역. `seed:=42`로 재현,
+(기본 범위 x∈[1.0,1.4], y∈[-0.7,0.7] (Y 레일로 탁구대 폭 전체), z∈[0.85,1.15] — 5 m/s 타격이 도달 가능한 영역. `seed:=42`로 재현,
 `x_min`/`x_max`/`y_min`/… 로 범위 변경)
 
 - 공은 시작할 때 볼머신 위치에 멈춰 있다가 `fire_ball.sh` / 볼머신이 쏠 때만 움직인다. 위치 지정: `tools/hold_ball.sh 1.15 0 0.95`

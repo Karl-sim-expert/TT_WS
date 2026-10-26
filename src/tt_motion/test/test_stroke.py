@@ -13,7 +13,7 @@ from tt_motion.stroke import (StrokeError, StrokeParams, build_stroke,  # noqa
                               paddle_rotation_for, smoothstep5, smoothstep5_integral)
 from urdf_utils import processed_urdf  # noqa
 
-Q_READY = np.array([0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559])
+Q_READY = np.array([0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559])
 BALL_R, PADDLE_HALF = 0.02, 0.006
 E_PADDLE = 0.85
 
@@ -30,10 +30,11 @@ class KinematicsTest(unittest.TestCase):
     def setUpClass(cls):
         cls.chain = Chain(processed_urdf())
         cls.chain.set_weight_by_name('rail_joint', 0.1)
+        cls.chain.set_weight_by_name('rail_y_joint', 0.1)
 
     def test_chain_has_rail_and_seven_arm_joints_and_paddle_normal_faces_table(self):
-        self.assertEqual(self.chain.n, 8)
-        self.assertEqual(self.chain.joint_names[0], 'rail_joint')
+        self.assertEqual(self.chain.n, 9)
+        self.assertEqual(self.chain.joint_names[:2], ['rail_y_joint', 'rail_joint'])
         t = self.chain.fk(Q_READY)
         self.assertLess(t[0, 2], -0.9)            # paddle +z points toward -x (the table)
         self.assertGreater(t[0, 3], 1.0)          # paddle is in front of the base at x = 1.7
@@ -41,14 +42,14 @@ class KinematicsTest(unittest.TestCase):
     def test_jacobian_matches_finite_differences(self):
         q = Q_READY + 0.1
         jac = self.chain.jacobian(q)
-        for i in range(8):
-            dq = np.zeros(8)
+        for i in range(9):
+            dq = np.zeros(9)
             dq[i] = 1e-6
             t0, t1 = self.chain.fk(q), self.chain.fk(q + dq)
             self.assertTrue(np.allclose((t1[:3, 3] - t0[:3, 3]) / 1e-6, jac[:3, i], atol=1e-4))
 
     def test_ik_reaches_pose(self):
-        target = self.chain.fk(Q_READY + np.array([0.1, 0.1, 0.1, -0.1, 0.1, 0.05, -0.1, 0.1]))
+        target = self.chain.fk(Q_READY + np.array([0.1, 0.1, 0.1, 0.1, -0.1, 0.1, 0.05, -0.1, 0.1]))
         q, ok = self.chain.ik(target, Q_READY)
         self.assertTrue(ok)
         self.assertLess(np.linalg.norm(self.chain.fk(q)[:3, 3] - target[:3, 3]), 5e-4)
@@ -63,6 +64,7 @@ class StrokeTest(unittest.TestCase):
     def setUpClass(cls):
         cls.chain = Chain(processed_urdf())
         cls.chain.set_weight_by_name('rail_joint', 0.1)
+        cls.chain.set_weight_by_name('rail_y_joint', 0.1)
 
     def build(self, out_speed=1.0, scale=1.0, t_hit=4.0, ball=(1.15, 0.0, 0.95), **kw):
         pos, rot, v, n = hit_setup(self.chain, ball, out_speed, **kw)
@@ -155,6 +157,7 @@ class ImpactSimulationTest(unittest.TestCase):
     def setUpClass(cls):
         cls.chain = Chain(processed_urdf())
         cls.chain.set_weight_by_name('rail_joint', 0.1)
+        cls.chain.set_weight_by_name('rail_y_joint', 0.1)
 
     def replay(self, out_speed, elevation, yaw, ball=(1.15, 0.0, 0.95), scale=4.0):
         pos, rot, v, n = hit_setup(self.chain, ball, out_speed, elevation, yaw)

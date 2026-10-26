@@ -10,6 +10,7 @@
 
   <!-- Ready pose: same as the initial joint values in tt_robot.urdf.xacro and q_ready in tt_motion (rail at 0). -->
   <group_state name="ready" group="panda_arm">
+    <joint name="rail_y_joint" value="0.0"/>
     <joint name="rail_joint" value="0.0"/>
     <joint name="panda_joint1" value="-0.058"/>
     <joint name="panda_joint2" value="0.132"/>
@@ -34,7 +35,12 @@
   <disable_collisions link1="panda_hand" link2="panda_leftfinger" reason="Adjacent"/>
   <disable_collisions link1="panda_hand" link2="panda_rightfinger" reason="Adjacent"/>
   <disable_collisions link1="panda_hand" link2="paddle" reason="Adjacent"/>
-  <disable_collisions link1="rail_base" link2="rail_carriage" reason="Adjacent"/>
+  <disable_collisions link1="rail_base" link2="rail_y_carriage" reason="Adjacent"/>
+  <disable_collisions link1="rail_y_carriage" link2="rail_carriage" reason="Adjacent"/>
+  <disable_collisions link1="rail_base" link2="rail_carriage" reason="Never"/>
+  <disable_collisions link1="rail_y_carriage" link2="panda_link0" reason="Never"/>
+  <disable_collisions link1="rail_y_carriage" link2="panda_link1" reason="Never"/>
+  <disable_collisions link1="rail_y_carriage" link2="panda_link2" reason="Never"/>
   <disable_collisions link1="rail_carriage" link2="panda_link0" reason="Adjacent"/>
   <disable_collisions link1="rail_base" link2="panda_link0" reason="Never"/>
 

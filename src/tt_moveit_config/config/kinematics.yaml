@@ -1,4 +1,4 @@
-# The chain includes the rail (8 joints, redundant: KDL picks a solution near the seed).
+# The chain includes the rail (9 joints, redundant: KDL picks a solution near the seed).
 # KDL ships with MoveIt. For a faster / more robust solver install ros-humble-trac-ik-kinematics-plugin
 # and use  kinematics_solver: trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin
 panda_arm:

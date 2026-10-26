@@ -21,7 +21,7 @@ from tt_msgs.msg import StrokePlan
 from tt_motion.kinematics import Chain, quat_to_matrix
 from tt_motion.stroke import StrokeError, StrokeParams, build_stroke, paddle_rotation_for
 
-READY = [0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]  # rail_joint + panda_joint1..7, as in tt_robot.urdf.xacro
+READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]  # rail_y_joint + rail_joint + panda_joint1..7, as in tt_robot.urdf.xacro
 
 
 class StrokeExecutor(Node):
@@ -36,6 +36,7 @@ class StrokeExecutor(Node):
         # trajectory this much earlier so the paddle arrives at the planned time.
         self.declare_parameter('tracking_lag', 0.010)
         self.declare_parameter('rail_joint', 'rail_joint')
+        self.declare_parameter('rail_y_joint', 'rail_y_joint')
         self.declare_parameter('rail_weight', 0.1)   # < 1: the rail carries the translation
         self.declare_parameter('d_back', 0.20)
         self.declare_parameter('d_follow', 0.15)
@@ -47,6 +48,8 @@ class StrokeExecutor(Node):
         self.chain = Chain(urdf, tip=self.get_parameter('tip_link').value)
         self.chain.set_weight_by_name(
             self.get_parameter('rail_joint').value, self.get_parameter('rail_weight').value)
+        self.chain.set_weight_by_name(
+            self.get_parameter('rail_y_joint').value, self.get_parameter('rail_weight').value)
         self.q_ready = np.array(self.get_parameter('q_ready').value, float)
         self.params = StrokeParams(
             d_back=self.get_parameter('d_back').value,

@@ -26,7 +26,7 @@ from tt_msgs.msg import StrokePlan
 from tt_motion.kinematics import Chain, matrix_to_quat
 from tt_motion.stroke import paddle_rotation_for
 
-READY = [0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
+READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
 BALL_RADIUS = 0.02
 PADDLE_HALF_THICKNESS = 0.006
 TIMING_LIMIT = 0.010  # s
@@ -42,7 +42,7 @@ class HitStaticBall(Node):
                 ('paddle_restitution', 0.85), ('lead', 4.0), ('repeat', 1), ('settle', 6.0),
                 # random parking: each run samples the ball uniformly in this box
                 ('random_pos', False), ('seed', 0),
-                ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.2), ('y_max', 0.2),
+                ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
