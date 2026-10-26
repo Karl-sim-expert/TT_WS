@@ -31,7 +31,7 @@ class ReturnBall(Node):
         super().__init__('return_ball')
         for name, default in (
                 ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
-                ('trigger_min_x', -1.55), ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
+                ('trigger_min_x', -1.55), ('contact_shift', 0.035), ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 1.5),
                 ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
@@ -160,11 +160,16 @@ class ReturnBall(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.hit_time.sec = int(hit_abs)
         msg.hit_time.nanosec = int(round((hit_abs - int(hit_abs)) * 1e9))
-        msg.paddle_pose.position.x, msg.paddle_pose.position.y, msg.paddle_pose.position.z = \
-            map(float, plan.paddle_pos)
         # The orientation must be set explicitly: an all-zero quaternion is not the message default
         # (w defaults to 1 = identity), so the executor would not derive it from the velocity.
-        q = matrix_to_quat(paddle_rotation_for(self.chain, self.q_ready, plan.paddle_normal))
+        rot = paddle_rotation_for(self.chain, self.q_ready, plan.paddle_normal)
+        # The hand sits beside the disc on its +x' side and sticks out in front of the face: let the
+        # ball meet the disc on the opposite side (timing jitter moves the contact point along the
+        # ball's tangential velocity, mostly up = toward the hand).
+        plan.paddle_pos = plan.paddle_pos + float(self.get_parameter('contact_shift').value) * rot[:, 0]
+        msg.paddle_pose.position.x, msg.paddle_pose.position.y, msg.paddle_pose.position.z = \
+            map(float, plan.paddle_pos)
+        q = matrix_to_quat(rot)
         (msg.paddle_pose.orientation.x, msg.paddle_pose.orientation.y,
          msg.paddle_pose.orientation.z, msg.paddle_pose.orientation.w) = map(float, q)
         v_p = plan.paddle_speed * plan.paddle_normal

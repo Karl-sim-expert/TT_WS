@@ -43,7 +43,7 @@ def generate_launch_description():
                      # the ball arrives within ~0.7 s: shorter backswing and faster preparation than M2
                      'min_move_time': 0.2, 'prep_vel_frac': 0.9,
                      'd_back': 0.08, 'd_follow': 0.10, 'go_ready_on_start': True,
-                     'tracking_lag': 0.025}])
+                     'tracking_lag': 0.040}])
 
     returner = Node(
         package='tt_motion', executable='return_ball', output='screen',
