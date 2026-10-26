@@ -105,6 +105,7 @@ struct PaddleParams
   double rim_margin{0.01};       // extra reach beyond the disc edge (ball radius ~ rim hits)
   double restitution{0.85};
   double friction{0.45};
+  bool back_face_hits{false};    // a ball behind the paddle (-z side) is ignored, as in real play
 };
 
 struct PaddleState
@@ -129,6 +130,9 @@ inline bool paddle_contact(
   const Vec3 d_plane = d - h * s.axis_z;
   const double slab = p.radius + pp.half_thickness;
   if (std::abs(h) > slab || norm(d_plane) > pp.radius + pp.rim_margin) {
+    return false;
+  }
+  if (h < 0.0 && !pp.back_face_hits) {
     return false;
   }
   const double side = h >= 0.0 ? 1.0 : -1.0;

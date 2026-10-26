@@ -93,7 +93,10 @@ int main()
   {
     PaddleState s{{0, 0, 0}, {0, 0, 1}, {0, 0, -2.0}, {}};
     Vec3 pos{0, 0, -(slab - 0.004)}, vb{}, wb{};
-    CHECK(paddle_contact(p, pp, s, pos, vb, wb), "back face hit");
+    CHECK(!paddle_contact(p, pp, s, pos, vb, wb), "back face ignored by default");
+    PaddleParams both = pp;
+    both.back_face_hits = true;
+    CHECK(paddle_contact(p, both, s, pos, vb, wb), "back face hit");
     CHECK(std::abs(vb.z + (1.0 + pe) * 2.0) < 1e-9, "back face reflects along -z");
   }
 
