@@ -16,20 +16,27 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from tt_msgs.msg import StrokePlan
 
+from tt_motion.kinematics import Chain, matrix_to_quat
 from tt_motion.return_planner import ReturnParams, plan_return
+from tt_motion.stroke import paddle_rotation_for
+
+READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
 
 
 class ReturnBall(Node):
     def __init__(self):
         super().__init__('return_ball')
         for name, default in (
-                ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
+                ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
+                ('trigger_min_x', -1.55), ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 1.5),
                 ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
                 ('spin_from_odometry', False)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
+        self.chain = Chain(g('robot_description'), tip=g('tip_link'))
+        self.q_ready = np.array(g('q_ready'), float)
         self.params = ReturnParams(
             box_x=(g('x_min'), g('x_max')), box_y=(g('y_min'), g('y_max')),
             box_z=(g('z_min'), g('z_max')), min_lead=float(g('min_lead')),
@@ -76,7 +83,8 @@ class ReturnBall(Node):
         if self.plan is not None:
             self.watch_landing(t, p, v)
             self.prev_vz = v[2]
-        elif (t >= self.armed_after and p[0] < self.get_parameter('trigger_x').value
+        elif (t >= self.armed_after and self.get_parameter('trigger_min_x').value < p[0]
+              < self.get_parameter('trigger_x').value
               and v[0] > self.get_parameter('trigger_vx').value):
             self.get_logger().info(
                 f'ball launched: pos {np.round(p, 2).tolist()}, v {np.round(v, 2).tolist()} '
@@ -102,7 +110,11 @@ class ReturnBall(Node):
         msg.hit_time.nanosec = int(round((hit_abs - int(hit_abs)) * 1e9))
         msg.paddle_pose.position.x, msg.paddle_pose.position.y, msg.paddle_pose.position.z = \
             map(float, plan.paddle_pos)
-        # orientation left as zeros: the executor then aligns the paddle normal with the velocity
+        # The orientation must be set explicitly: an all-zero quaternion is not the message default
+        # (w defaults to 1 = identity), so the executor would not derive it from the velocity.
+        q = matrix_to_quat(paddle_rotation_for(self.chain, self.q_ready, plan.paddle_normal))
+        (msg.paddle_pose.orientation.x, msg.paddle_pose.orientation.y,
+         msg.paddle_pose.orientation.z, msg.paddle_pose.orientation.w) = map(float, q)
         v_p = plan.paddle_speed * plan.paddle_normal
         msg.paddle_twist.linear.x, msg.paddle_twist.linear.y, msg.paddle_twist.linear.z = \
             map(float, v_p)

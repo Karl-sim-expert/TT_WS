@@ -46,7 +46,7 @@ def generate_launch_description():
 
     returner = Node(
         package='tt_motion', executable='return_ball', output='screen',
-        parameters=[{'use_sim_time': True, 'target_x': num('target_x'),
+        parameters=[{'robot_description': robot_description, 'use_sim_time': True, 'target_x': num('target_x'),
                      'target_y': num('target_y'), 'min_lead': num('min_lead')}])
 
     return LaunchDescription([
