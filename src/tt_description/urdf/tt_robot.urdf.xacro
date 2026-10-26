@@ -13,31 +13,89 @@
 
   <link name="world"/>
 
-  <!-- Pedestal (floor to base_z) so the arm works at table height. -->
-  <link name="pedestal">
+  <!-- XY gantry carrying the arm: a Y rail (world y) fixed to the floor carries an X rail (world
+       x, the stroke direction), which carries the arm. The rails supply the fast translation of a
+       stroke and the lateral coverage of the table width; the Panda mostly orients the paddle.
+       rail_y_joint = rail_joint = 0 is the nominal base position (base_x, base_y); positive x
+       moves the base away from the table. Visual only (the ball never touches the rails);
+       effort/velocity limits are sim values. -->
+  <xacro:arg name="rail_lower" default="-0.5"/>
+  <xacro:arg name="rail_upper" default="0.6"/>
+  <xacro:arg name="rail_velocity" default="6.0"/>
+  <xacro:arg name="rail_y_lower" default="-0.9"/>
+  <xacro:arg name="rail_y_upper" default="0.9"/>
+  <xacro:arg name="rail_y_velocity" default="4.0"/>
+  <!-- rail_base: visual-only beam along y, fixed to the world (Gazebo merges it into the world), so
+       the prismatic joints must hang from `world`/movable links, never from rail_base. -->
+  <link name="rail_base">
     <visual>
-      <origin xyz="0 0 ${0.5 * $(arg base_z)}"/>
-      <geometry><box size="0.4 0.4 $(arg base_z)"/></geometry>
-      <material name="pedestal_grey"><color rgba="0.35 0.35 0.35 1"/></material>
+      <origin xyz="0 ${0.5 * ($(arg rail_y_upper) + $(arg rail_y_lower))} 0.15"/>
+      <geometry><box size="0.3 ${$(arg rail_y_upper) - $(arg rail_y_lower) + 0.5} 0.3"/></geometry>
+      <material name="rail_grey"><color rgba="0.35 0.35 0.35 1"/></material>
     </visual>
-    <collision>
-      <origin xyz="0 0 ${0.5 * $(arg base_z)}"/>
-      <geometry><box size="0.4 0.4 $(arg base_z)"/></geometry>
-    </collision>
   </link>
-  <joint name="world_to_pedestal" type="fixed">
+  <joint name="world_to_rail" type="fixed">
     <parent link="world"/>
-    <child link="pedestal"/>
+    <child link="rail_base"/>
     <origin xyz="$(arg base_x) $(arg base_y) 0" rpy="0 0 0"/>
   </joint>
-  <joint name="world_to_base" type="fixed">
+  <!-- Y carriage: slides along y and holds the X rail. -->
+  <link name="rail_y_carriage">
+    <inertial>
+      <origin xyz="0 0 0.35"/>
+      <mass value="10.0"/>
+      <inertia ixx="0.5" ixy="0" ixz="0" iyy="0.5" iyz="0" izz="0.5"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.35"/>
+      <geometry><box size="0.4 0.4 0.1"/></geometry>
+      <material name="carriage_dark"><color rgba="0.15 0.15 0.15 1"/></material>
+    </visual>
+    <visual>
+      <origin xyz="${0.5 * ($(arg rail_upper) + $(arg rail_lower))} 0 ${$(arg base_z) - 0.15}"/>
+      <geometry><box size="${$(arg rail_upper) - $(arg rail_lower) + 0.5} 0.3 0.1"/></geometry>
+      <material name="rail_grey"><color rgba="0.35 0.35 0.35 1"/></material>
+    </visual>
+  </link>
+  <joint name="rail_y_joint" type="prismatic">
     <parent link="world"/>
+    <child link="rail_y_carriage"/>
+    <origin xyz="$(arg base_x) $(arg base_y) 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="$(arg rail_y_lower)" upper="$(arg rail_y_upper)" effort="5000" velocity="$(arg rail_y_velocity)"/>
+    <dynamics damping="10"/>
+  </joint>
+  <link name="rail_carriage">
+    <inertial>
+      <origin xyz="0 0 ${$(arg base_z) - 0.05}"/>
+      <mass value="5.0"/>
+      <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0" izz="0.1"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${$(arg base_z) - 0.05}"/>
+      <geometry><box size="0.4 0.4 0.1"/></geometry>
+      <material name="carriage_dark"><color rgba="0.15 0.15 0.15 1"/></material>
+    </visual>
+  </link>
+  <joint name="rail_joint" type="prismatic">
+    <parent link="rail_y_carriage"/>
+    <child link="rail_carriage"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="$(arg rail_lower)" upper="$(arg rail_upper)" effort="5000" velocity="$(arg rail_velocity)"/>
+    <dynamics damping="10"/>
+  </joint>
+  <joint name="carriage_to_base" type="fixed">
+    <parent link="rail_carriage"/>
     <child link="panda_link0"/>
-    <origin xyz="$(arg base_x) $(arg base_y) $(arg base_z)" rpy="0 0 $(arg base_yaw)"/>
+    <origin xyz="0 0 $(arg base_z)" rpy="0 0 $(arg base_yaw)"/>
   </joint>
 
-  <!-- Paddle: disc of 150 mm diameter, 12 mm thick (collision >= 10 mm to limit tunneling).
-       Face normal = panda_hand +x. TODO: tune pose/size once the stroke planner exists. -->
+  <!-- Paddle: disc of 150 mm diameter, 12 mm thick. Face normal = local +z (= panda_hand +x).
+       No engine collision: the BallPhysics plugin computes the paddle impact analytically from
+       this link's pose and velocity (a 10 m/s ball moves 1 cm per 1 ms step, the engine would
+       miss thin contacts). The fixed joint is preserved so the link survives the URDF -> SDF
+       conversion (otherwise it is lumped into panda_hand). -->
   <link name="paddle">
     <inertial>
       <mass value="0.15"/>
@@ -47,10 +105,10 @@
       <geometry><cylinder radius="0.075" length="0.012"/></geometry>
       <material name="paddle_red"><color rgba="0.8 0.1 0.1 1"/></material>
     </visual>
-    <collision>
-      <geometry><cylinder radius="0.075" length="0.012"/></geometry>
-    </collision>
   </link>
+  <gazebo reference="paddle_joint">
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
   <joint name="paddle_joint" type="fixed">
     <parent link="panda_hand"/>
     <child link="paddle"/>
@@ -70,6 +128,20 @@
         <state_interface name="velocity"/>
       </joint>
     </xacro:macro>
+    <joint name="rail_y_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rail_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
     <!-- Ready pose: paddle ~0.5 m in front of the base, face vertical, normal toward the table. -->
     <xacro:arm_joint name="panda_joint1" initial="-0.058"/>
     <xacro:arm_joint name="panda_joint2" initial="0.132"/>

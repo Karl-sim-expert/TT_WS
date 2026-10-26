@@ -72,6 +72,76 @@ int main()
   table_bounce(p, v, w);
   CHECK(v.z == 2, "no bounce when leaving");
 
+  // ---- Paddle ----
+  PaddleParams pp;
+  const double slab = p.radius + pp.half_thickness;
+  const double pe = pp.restitution;
+
+  // Resting ball on the face side, paddle moving along its normal at 2 m/s: the ball leaves with
+  // (1 + e) * 2 m/s along the normal and no spin (no tangential slip).
+  {
+    PaddleState s{{0, 0, 0}, {0, 0, 1}, {0, 0, 2.0}, {}};
+    Vec3 pos{0, 0, slab - 0.004}, vb{}, wb{};
+    CHECK(paddle_contact(p, pp, s, pos, vb, wb), "paddle hits a resting ball");
+    CHECK(std::abs(vb.z - (1.0 + pe) * 2.0) < 1e-9, "(1+e) v_paddle along the normal");
+    CHECK(std::abs(vb.x) < 1e-12 && std::abs(vb.y) < 1e-12, "no sideways velocity");
+    CHECK(norm(wb) < 1e-9, "no spin without slip");
+    CHECK(std::abs(pos.z - slab) < 1e-12, "ball pushed out to the surface");
+  }
+
+  // Same on the other face: the normal flips.
+  {
+    PaddleState s{{0, 0, 0}, {0, 0, 1}, {0, 0, -2.0}, {}};
+    Vec3 pos{0, 0, -(slab - 0.004)}, vb{}, wb{};
+    CHECK(!paddle_contact(p, pp, s, pos, vb, wb), "back face ignored by default");
+    PaddleParams both = pp;
+    both.back_face_hits = true;
+    CHECK(paddle_contact(p, both, s, pos, vb, wb), "back face hit");
+    CHECK(std::abs(vb.z + (1.0 + pe) * 2.0) < 1e-9, "back face reflects along -z");
+  }
+
+  // Ball approaching a static paddle reflects with restitution.
+  {
+    PaddleState s{{0, 0, 0}, {0, 0, 1}, {}, {}};
+    Vec3 pos{0, 0, slab - 0.002}, vb{0, 0, -5.0}, wb{};
+    CHECK(paddle_contact(p, pp, s, pos, vb, wb), "ball hits a static paddle");
+    CHECK(std::abs(vb.z - pe * 5.0) < 1e-9, "restitution on a static paddle");
+  }
+
+  // Tangential paddle motion gives friction and spin (rubber grabs the ball).
+  {
+    PaddleState s{{0, 0, 0}, {0, 0, 1}, {3.0, 0, 2.0}, {}};
+    Vec3 pos{0, 0, slab - 0.004}, vb{}, wb{};
+    CHECK(paddle_contact(p, pp, s, pos, vb, wb), "brushing hit");
+    CHECK(vb.x > 0.0 && vb.x < 3.0, "ball gets some of the tangential speed");
+    CHECK(wb.y < 0.0, "the contact point is dragged forward under the ball: backspin about -y");
+  }
+
+  // No contact: separating, outside the disc, outside the slab.
+  {
+    PaddleState s{{0, 0, 0}, {0, 0, 1}, {}, {}};
+    Vec3 pos{0, 0, slab - 0.002}, vb{0, 0, 1.0}, wb{};
+    CHECK(!paddle_contact(p, pp, s, pos, vb, wb), "separating ball is not hit again");
+    pos = {0.2, 0, slab - 0.002};
+    vb = {0, 0, -3.0};
+    CHECK(!paddle_contact(p, pp, s, pos, vb, wb), "outside the disc");
+    pos = {0, 0, slab + 0.01};
+    CHECK(!paddle_contact(p, pp, s, pos, vb, wb), "outside the slab");
+  }
+
+  // Tilted paddle: normal (0.6, 0, 0.8), moving along it at 1 m/s -> ball leaves along the normal.
+  {
+    const Vec3 nrm{0.6, 0, 0.8};
+    PaddleState s{{1, 2, 3}, nrm, nrm, {}};
+    Vec3 pos = s.pos + (slab - 0.005) * nrm, vb{}, wb{};
+    CHECK(paddle_contact(p, pp, s, pos, vb, wb), "tilted paddle hit");
+    CHECK(norm(vb - (1.0 + pe) * nrm) < 1e-9, "outgoing velocity along the tilted normal");
+  }
+
+  // The swept slab: a ball arriving at 10 m/s against a paddle moving 5 m/s the other way moves
+  // 15 mm per 1 ms step, far less than the slab (2 x 26 mm), so some step lands inside it.
+  CHECK(2.0 * slab > 15e-3 * 2.0, "slab is wider than the per-step relative motion");
+
   std::printf(failures ? "%d test(s) FAILED\n" : "all tests passed\n", failures);
   return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

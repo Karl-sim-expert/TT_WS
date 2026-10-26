@@ -63,31 +63,90 @@ inline Vec3 aerodynamic_force(const BallParams & p, Vec3 v, Vec3 w)
   return f;
 }
 
-// Analytic bounce on a horizontal surface with normal n = +z.
+// Analytic bounce on a surface with unit normal n (pointing toward the ball's side), for a surface
+// at rest in the frame in which v and w are given.
 //   v_n+ = -e v_n-,  u = v_t + r n x w,  dv_t = -mu (1+e) |v_n-| u_hat (capped at sticking),
 //   dw = -(3 / 2r) n x dv_t   (hollow sphere, I = 2/3 m r^2)
-inline void table_bounce(const BallParams & p, Vec3 & v, Vec3 & w)
+inline void surface_bounce(
+  const BallParams & p, double restitution, double friction, Vec3 n, Vec3 & v, Vec3 & w)
 {
-  const double vn = v.z;
+  const double vn = dot(v, n);
   if (vn >= 0.0) {
     return;
   }
-  const Vec3 n{0, 0, 1};
-  const Vec3 vt{v.x, v.y, 0.0};
+  const Vec3 vt = v - vn * n;
   const Vec3 u = vt + p.radius * cross(n, w);
-  const double u_norm = std::sqrt(u.x * u.x + u.y * u.y);
+  const double u_norm = norm(u);
 
-  double dv = p.friction * (1.0 + p.restitution) * std::abs(vn);
+  double dv = friction * (1.0 + restitution) * std::abs(vn);
   dv = std::min(dv, u_norm / 2.5);  // contact-point velocity changes by 2.5 dv_t: stop at rolling
 
   Vec3 dvt{};
   if (u_norm > 1e-9) {
-    dvt = {-dv * u.x / u_norm, -dv * u.y / u_norm, 0.0};
+    dvt = (-dv / u_norm) * u;
   }
-  v.x += dvt.x;
-  v.y += dvt.y;
-  v.z = -p.restitution * vn;
+  v = vt + dvt + (-restitution * vn) * n;
   w = w + (-3.0 / (2.0 * p.radius)) * cross(n, dvt);
+}
+
+// Bounce on the horizontal table (n = +z).
+inline void table_bounce(const BallParams & p, Vec3 & v, Vec3 & w)
+{
+  surface_bounce(p, p.restitution, p.friction, Vec3{0, 0, 1}, v, w);
+}
+
+// Paddle: disc of `radius` and thickness 2 * half_thickness, face normal = local +z (`axis_z`).
+// The rubber has its own restitution and friction. Both faces hit (the ball is on the side of its
+// centre), so a ball on the -z side is treated with the opposite normal.
+struct PaddleParams
+{
+  double radius{0.075};
+  double half_thickness{0.006};
+  double rim_margin{0.01};       // extra reach beyond the disc edge (ball radius ~ rim hits)
+  double restitution{0.85};
+  double friction{0.45};
+  bool back_face_hits{false};    // a ball behind the paddle (-z side) is ignored, as in real play
+};
+
+struct PaddleState
+{
+  Vec3 pos;       // paddle frame origin (disc centre) in world
+  Vec3 axis_z;    // unit normal in world
+  Vec3 vel;       // velocity of the origin
+  Vec3 omega;     // angular velocity
+};
+
+// Ball-paddle contact test and impact. The contact slab is 2 (r + half_thickness) thick, wider
+// than the distance a 10 m/s ball plus a fast paddle covers in one 1 ms step, so the engine's
+// discrete steps cannot tunnel through. On contact (ball inside the slab and approaching the
+// face) v and w are replaced by the post-impact values (the surface moves with the paddle) and
+// `pos` is pushed out to the surface. Returns true if an impact happened.
+inline bool paddle_contact(
+  const BallParams & p, const PaddleParams & pp, const PaddleState & s, Vec3 & pos, Vec3 & v,
+  Vec3 & w)
+{
+  const Vec3 d = pos - s.pos;
+  const double h = dot(d, s.axis_z);
+  const Vec3 d_plane = d - h * s.axis_z;
+  const double slab = p.radius + pp.half_thickness;
+  if (std::abs(h) > slab || norm(d_plane) > pp.radius + pp.rim_margin) {
+    return false;
+  }
+  if (h < 0.0 && !pp.back_face_hits) {
+    return false;
+  }
+  const double side = h >= 0.0 ? 1.0 : -1.0;
+  const Vec3 n = side * s.axis_z;
+  const Vec3 contact = d_plane + (side * pp.half_thickness) * s.axis_z;  // relative to the origin
+  const Vec3 v_surface = s.vel + cross(s.omega, contact);
+  Vec3 v_rel = v - v_surface;
+  if (dot(v_rel, n) >= 0.0) {
+    return false;  // already separating
+  }
+  surface_bounce(p, pp.restitution, pp.friction, n, v_rel, w);
+  v = v_rel + v_surface;
+  pos = pos + (slab - std::abs(h)) * n;
+  return true;
 }
 
 }  // namespace tt_gazebo

@@ -18,6 +18,14 @@
       <restitution>0.9</restitution>
       <friction>0.25</friction>
       <debug>true</debug>
+      <!-- Parked (held motionless, no gravity) at the launch point until /ball/launch, /ball/hold
+           or a paddle hit. Paddle: disc 150 mm x 12 mm, rubber restitution/friction. -->
+      <park>true</park>
+      <robot_name>tt_robot</robot_name>
+      <paddle_radius>0.075</paddle_radius>
+      <paddle_half_thickness>0.006</paddle_half_thickness>
+      <paddle_restitution>0.85</paddle_restitution>
+      <paddle_friction>0.45</paddle_friction>
       <launch_x>-1.8</launch_x>
       <launch_y>0.0</launch_y>
       <launch_z>1.0</launch_z>

@@ -1,0 +1,40 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Enabled: true
+      Name: MotionPlanning
+      Planning Request:
+        Planning Group: panda_arm
+        Query Goal State: true
+        Query Start State: false
+      Planning Scene Topic: /monitored_planning_scene
+      Robot Description: robot_description
+      Scene Geometry:
+        Scene Alpha: 0.9
+        Show Scene Geometry: true
+  Global Options:
+    Fixed Frame: world
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 4.0
+      Focal Point:
+        X: 0.5
+        Y: 0.0
+        Z: 0.8
+      Pitch: 0.5
+      Yaw: 2.6
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400

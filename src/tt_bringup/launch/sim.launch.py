@@ -57,7 +57,7 @@ def generate_launch_description():
     spawn_ball = Node(
         package='ros_gz_sim', executable='create', output='screen',
         arguments=['-file', os.path.join(gazebo_share, 'models', 'ball', 'model.sdf'),
-                   '-name', 'ball', '-x', '-0.8', '-y', '0', '-z', '1.2'])
+                   '-name', 'ball', '-x', '-1.8', '-y', '0', '-z', '1.0'])
 
     bridge = Node(
         package='ros_gz_bridge', executable='parameter_bridge', output='screen',
@@ -65,6 +65,8 @@ def generate_launch_description():
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/model/ball/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
             '/ball/launch@geometry_msgs/msg/Twist]gz.msgs.Twist',
+            '/ball/hold@geometry_msgs/msg/Vector3]gz.msgs.Vector3d',
+            '/ball/paddle_hit@nav_msgs/msg/Odometry[gz.msgs.Odometry',
         ])
 
     # Lightweight viewer (default on): rviz:=false to disable.
@@ -85,6 +87,12 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('ball_machine')),
         parameters=[{n: ParameterValue(c, value_type=float) for n, c in machine_cfg.items()},
                     {'use_sim_time': True}])
+
+    # MoveIt move_group + table/net collision objects (opt-in, moveit:=true; needs the MoveIt apt packages).
+    moveit = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('tt_moveit_config'), 'launch', 'move_group.launch.py')),
+        condition=IfCondition(LaunchConfiguration('moveit')))
 
     # Cameras are opt-in (cameras:=true): two 120 Hz cameras are expensive to render.
     camera_nodes = []
@@ -112,6 +120,7 @@ def generate_launch_description():
         DeclareLaunchArgument('cameras', default_value='false'),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument('ball_machine', default_value='false'),
+        DeclareLaunchArgument('moveit', default_value='false'),
         DeclareLaunchArgument('machine_speed', default_value='9.0'),
         DeclareLaunchArgument('machine_spin_max', default_value='200.0'),
         DeclareLaunchArgument('machine_x_min', default_value='0.6'),
@@ -130,6 +139,7 @@ def generate_launch_description():
         rviz_node,
         ball_machine,
         scene_markers,
+        moveit,
         RegisterEventHandler(OnProcessExit(
             target_action=spawn_robot, on_exit=[load_jsb])),
         RegisterEventHandler(OnProcessExit(

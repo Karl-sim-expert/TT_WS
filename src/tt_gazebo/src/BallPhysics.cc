@@ -1,22 +1,34 @@
 // Gazebo (Ignition Fortress) system plugin for the table tennis ball.
 //  * applies drag + Magnus force every step (ball_dynamics.hpp)
 //  * handles the table bounce analytically (the table has no collision geometry)
+//  * handles the paddle impact analytically too (paddle pose/velocity from the robot's paddle link)
 //  * /ball/launch (gz.msgs.Twist: linear = velocity, angular = spin) resets and fires the ball
+//  * /ball/hold (gz.msgs.Vector3d) parks the ball motionless at a point (gravity off, pinned) until
+//    it is launched or hit. The ball starts parked at the launch point (`park` in the SDF).
+//  * /ball/paddle_hit (gz.msgs.Odometry) is published at every paddle impact: stamp = sim time,
+//    pose = ball position, twist = ball velocity/spin right after the impact.
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 
 #include <chrono>
 
 #include <ignition/common/Console.hh>
 #include <ignition/gazebo/EntityComponentManager.hh>
+#include <ignition/gazebo/components/Model.hh>
+#include <ignition/gazebo/components/Name.hh>
 #include <ignition/gazebo/Link.hh>
 #include <ignition/gazebo/Model.hh>
 #include <ignition/gazebo/System.hh>
 #include <ignition/gazebo/Util.hh>
 #include <ignition/math/Pose3.hh>
+#include <ignition/math/Quaternion.hh>
 #include <ignition/math/Vector3.hh>
+#include <ignition/msgs/odometry.pb.h>
 #include <ignition/msgs/twist.pb.h>
+#include <ignition/msgs/vector3d.pb.h>
 #include <ignition/plugin/Register.hh>
 #include <ignition/transport/Node.hh>
 
@@ -56,6 +68,10 @@ public:
     get("table_top_z", this->table.top_z);
     get("table_half_x", this->table.half_x);
     get("table_half_y", this->table.half_y);
+    get("paddle_radius", this->paddle.radius);
+    get("paddle_half_thickness", this->paddle.half_thickness);
+    get("paddle_restitution", this->paddle.restitution);
+    get("paddle_friction", this->paddle.friction);
     get("launch_x", this->launchPos.X());
     get("launch_y", this->launchPos.Y());
     get("launch_z", this->launchPos.Z());
@@ -63,7 +79,16 @@ public:
     if (sdf->HasElement("debug")) {
       this->debug = sdf->Get<bool>("debug");
     }
+    if (sdf->HasElement("robot_name")) {
+      this->robotName = sdf->Get<std::string>("robot_name");
+    }
+    if (sdf->HasElement("park")) {
+      this->held = sdf->Get<bool>("park");
+      this->holdPos = this->launchPos;
+    }
     this->node.Subscribe("/ball/launch", &BallPhysics::OnLaunch, this);
+    this->node.Subscribe("/ball/hold", &BallPhysics::OnHold, this);
+    this->hitPub = this->node.Advertise<ignition::msgs::Odometry>("/ball/paddle_hit");
     ignmsg << "[BallPhysics] loaded (link entity " << this->link.Entity()
            << ", debug=" << this->debug << ")" << std::endl;
   }
@@ -81,8 +106,23 @@ public:
       std::lock_guard<std::mutex> lock(this->mutex);
       launch.swap(this->pendingLaunch);
     }
+    std::optional<ignition::msgs::Vector3d> hold;
+    {
+      std::lock_guard<std::mutex> lock(this->mutex);
+      hold.swap(this->pendingHold);
+    }
     const double dt = std::chrono::duration<double>(info.dt).count();
+    this->UpdatePaddle(ecm, info, dt);
+    if (hold && dt > 0.0) {
+      this->holdPos = ignition::math::Vector3d(hold->x(), hold->y(), hold->z());
+      this->held = true;
+      this->launchPhase = 0;
+      if (this->debug) {
+        ignmsg << "[BallPhysics] HOLD at " << this->holdPos << std::endl;
+      }
+    }
     if (launch && dt > 0.0) {
+      this->held = false;
       // Step 1: teleport to the machine and cancel whatever velocity/spin the ball had.
       this->model.SetWorldPoseCmd(ecm, ignition::math::Pose3d(this->launchPos, {}));
       const auto lin0 = this->link.WorldLinearVelocity(ecm);
@@ -131,6 +171,54 @@ public:
              << " pos=(" << pose->Pos().X() << "," << pose->Pos().Y() << "," << pose->Pos().Z()
              << ") v=(" << v.x << "," << v.y << "," << v.z << ") |w|=" << norm(w)
              << " F=(" << fd.x << "," << fd.y << "," << fd.z << ")" << std::endl;
+      if (this->paddleGaveUp) {
+        ignmsg << "[BallPhysics] paddle: link not found (impacts disabled)" << std::endl;
+      } else if (!this->paddleValid) {
+        ignmsg << "[BallPhysics] paddle: no pose yet: " << this->paddleStatus << std::endl;
+      } else {
+        const Vec3 d{pose->Pos().X() - this->paddleState.pos.x,
+          pose->Pos().Y() - this->paddleState.pos.y, pose->Pos().Z() - this->paddleState.pos.z};
+        const double h = dot(d, this->paddleState.axis_z);
+        const double radial = norm(d - h * this->paddleState.axis_z);
+        ignmsg << "[BallPhysics] paddle: pos=(" << this->paddleState.pos.x << ","
+               << this->paddleState.pos.y << "," << this->paddleState.pos.z << ") |v|="
+               << norm(this->paddleState.vel) << " normal=(" << this->paddleState.axis_z.x << ","
+               << this->paddleState.axis_z.y << "," << this->paddleState.axis_z.z
+               << ") ball: along-normal=" << h << " off-axis=" << radial << std::endl;
+      }
+    }
+
+    // Paddle impact (analytic). A parked ball is at rest by definition.
+    if (dt > 0.0 && this->paddleValid) {
+      Vec3 pos{pose->Pos().X(), pose->Pos().Y(), pose->Pos().Z()};
+      Vec3 v1 = v;
+      Vec3 w1 = w;
+      if (paddle_contact(this->params, this->paddle, this->paddleState, pos, v1, w1)) {
+        this->ApplyVelocityChange(
+          ecm, dt, Vec3{v1.x - v.x, v1.y - v.y, v1.z - v.z},
+          Vec3{w1.x - w.x, w1.y - w.y, w1.z - w.z});
+        auto fixed = *pose;
+        fixed.Pos() = ignition::math::Vector3d(pos.x, pos.y, pos.z);
+        this->model.SetWorldPoseCmd(ecm, fixed);
+        this->held = false;
+        this->cooldownUntil = info.simTime + std::chrono::milliseconds(20);
+        this->PublishHit(info, pos, v1, w1);
+        if (this->debug) {
+          ignmsg << "[BallPhysics] PADDLE HIT t=" << std::chrono::duration<double>(info.simTime).count()
+                 << " ball v " << norm(v) << " -> " << norm(v1) << " out=(" << v1.x << ","
+                 << v1.y << "," << v1.z << ") |w|=" << norm(w1) << " paddle v=("
+                 << this->paddleState.vel.x << "," << this->paddleState.vel.y << ","
+                 << this->paddleState.vel.z << ")" << std::endl;
+        }
+        return;
+      }
+    }
+
+    // Parked ball: pinned at the hold point, velocities cancelled (acts like zero gravity).
+    if (this->held && dt > 0.0) {
+      this->model.SetWorldPoseCmd(ecm, ignition::math::Pose3d(this->holdPos, {}));
+      this->ApplyVelocityChange(ecm, dt, -*lin, -*ang);
+      return;
     }
 
     // Table bounce (analytic): ball surface reaches the table plane while moving down.
@@ -195,6 +283,118 @@ private:
       ignition::math::Vector3d(dw.x, dw.y, dw.z));
   }
 
+  // Look up the paddle link (once the robot has been spawned) and update its pose and velocity
+  // (finite difference of the world pose between steps; the arm is position controlled).
+  void UpdatePaddle(
+    ignition::gazebo::EntityComponentManager & ecm, const ignition::gazebo::UpdateInfo & info,
+    double dt)
+  {
+    if (this->paddleGaveUp) {
+      return;
+    }
+    if (this->paddleLink == ignition::gazebo::kNullEntity) {
+      const auto robot = ecm.EntityByComponents(
+        ignition::gazebo::components::Name(this->robotName),
+        ignition::gazebo::components::Model());
+      if (robot == ignition::gazebo::kNullEntity) {
+        this->paddleStatus = "robot model '" + this->robotName + "' not found";
+        return;
+      }
+      ignition::gazebo::Model robotModel(robot);
+      {
+        std::string names;
+        for (const auto link : robotModel.Links(ecm)) {
+          names += ignition::gazebo::Link(link).Name(ecm).value_or("?") + " ";
+        }
+        ignmsg << "[BallPhysics] robot '" << this->robotName << "' found, links: " << names
+               << std::endl;
+      }
+      this->paddleLink = robotModel.LinkByName(ecm, "paddle");
+      if (this->paddleLink != ignition::gazebo::kNullEntity) {
+        ignmsg << "[BallPhysics] paddle link found" << std::endl;
+      } else {
+        // The URDF converter merged the fixed paddle joint into its parent: use panda_link7 plus
+        // the fixed transform link7 -> panda_link8 -> panda_hand -> paddle (see tt_robot.urdf.xacro).
+        this->paddleLink = robotModel.LinkByName(ecm, "panda_link7");
+        this->paddleViaLink7 = this->paddleLink != ignition::gazebo::kNullEntity;
+        if (this->paddleViaLink7) {
+          ignwarn << "[BallPhysics] no 'paddle' link; using panda_link7 + fixed offset" << std::endl;
+        }
+      }
+      if (this->paddleLink == ignition::gazebo::kNullEntity) {
+        ignerr << "[BallPhysics] paddle link not found: paddle impacts are disabled" << std::endl;
+        this->paddleGaveUp = true;
+        return;
+      }
+    }
+    if (!this->paddleChecksEnabled) {
+      // Creates the link's WorldPose (and velocity) components, as for the ball link; they are
+      // filled from the next step on.
+      ignition::gazebo::Link(this->paddleLink).EnableVelocityChecks(ecm, true);
+      this->paddleChecksEnabled = true;
+    }
+    auto linkPose = ignition::gazebo::Link(this->paddleLink).WorldPose(ecm);
+    if (!linkPose) {
+      this->paddleStatus = "paddle link found but WorldPose() has no value";
+      return;
+    }
+    this->paddleStatus = "ok";
+    ignition::math::Pose3d pose = *linkPose;
+    if (this->paddleViaLink7) {
+      const ignition::math::Pose3d offset(
+        ignition::math::Vector3d(0, 0, 0.107 + 0.13),
+        ignition::math::Quaterniond(0, 0, -M_PI / 4) * ignition::math::Quaterniond(0, M_PI / 2, 0));
+      pose = pose * offset;
+    }
+    const auto z = pose.Rot().RotateVector(ignition::math::Vector3d::UnitZ);
+    if (this->havePrevPaddle && dt > 0.0) {
+      const auto dp = (pose.Pos() - this->prevPaddle.Pos()) / dt;
+      ignition::math::Quaterniond dq = pose.Rot() * this->prevPaddle.Rot().Inverse();
+      if (dq.W() < 0.0) {
+        dq = ignition::math::Quaterniond(-dq.W(), -dq.X(), -dq.Y(), -dq.Z());
+      }
+      const ignition::math::Vector3d vec(dq.X(), dq.Y(), dq.Z());
+      const double s = vec.Length();
+      ignition::math::Vector3d omega;
+      if (s > 1e-12) {
+        omega = vec * (2.0 * std::atan2(s, dq.W()) / s / dt);
+      }
+      this->paddleState.vel = Vec3{dp.X(), dp.Y(), dp.Z()};
+      this->paddleState.omega = Vec3{omega.X(), omega.Y(), omega.Z()};
+      this->paddleValid = true;
+    }
+    this->paddleState.pos = Vec3{pose.Pos().X(), pose.Pos().Y(), pose.Pos().Z()};
+    this->paddleState.axis_z = Vec3{z.X(), z.Y(), z.Z()};
+    this->prevPaddle = pose;
+    this->havePrevPaddle = true;
+    (void)info;
+  }
+
+  void PublishHit(
+    const ignition::gazebo::UpdateInfo & info, const Vec3 & pos, const Vec3 & v, const Vec3 & w)
+  {
+    ignition::msgs::Odometry msg;
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(info.simTime).count();
+    msg.mutable_header()->mutable_stamp()->set_sec(ns / 1000000000);
+    msg.mutable_header()->mutable_stamp()->set_nsec(ns % 1000000000);
+    msg.mutable_pose()->mutable_position()->set_x(pos.x);
+    msg.mutable_pose()->mutable_position()->set_y(pos.y);
+    msg.mutable_pose()->mutable_position()->set_z(pos.z);
+    msg.mutable_twist()->mutable_linear()->set_x(v.x);
+    msg.mutable_twist()->mutable_linear()->set_y(v.y);
+    msg.mutable_twist()->mutable_linear()->set_z(v.z);
+    msg.mutable_twist()->mutable_angular()->set_x(w.x);
+    msg.mutable_twist()->mutable_angular()->set_y(w.y);
+    msg.mutable_twist()->mutable_angular()->set_z(w.z);
+    this->hitPub.Publish(msg);
+  }
+
+  void OnHold(const ignition::msgs::Vector3d & msg)
+  {
+    std::lock_guard<std::mutex> lock(this->mutex);
+    this->pendingHold = msg;
+  }
+
   void OnLaunch(const ignition::msgs::Twist & msg)
   {
     std::lock_guard<std::mutex> lock(this->mutex);
@@ -206,6 +406,21 @@ private:
   ignition::transport::Node node;
   BallParams params;
   Table table;
+  PaddleParams paddle;
+  PaddleState paddleState;
+  bool paddleValid{false};
+  bool paddleViaLink7{false};
+  bool paddleGaveUp{false};
+  bool paddleChecksEnabled{false};
+  std::string paddleStatus{"not looked up yet"};
+  bool havePrevPaddle{false};
+  ignition::math::Pose3d prevPaddle;
+  ignition::gazebo::Entity paddleLink{ignition::gazebo::kNullEntity};
+  std::string robotName{"tt_robot"};
+  bool held{false};
+  ignition::math::Vector3d holdPos;
+  ignition::transport::Node::Publisher hitPub;
+  std::optional<ignition::msgs::Vector3d> pendingHold;
   ignition::math::Vector3d launchPos{-1.8, 0.0, 1.0};
   ignition::math::Vector3d launchVel;
   ignition::math::Vector3d launchSpin;
