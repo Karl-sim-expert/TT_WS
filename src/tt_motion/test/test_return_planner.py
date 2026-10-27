@@ -94,7 +94,7 @@ class ShotSelectorTest(unittest.TestCase):
         self.assertTrue(got <= {TOPSPIN_DRIVE, LOOP, BLOCK})
 
     def test_falls_back_to_fixed_target(self):
-        bad = lambda hit, v: types_choice((-5.0, 0.0))  # noqa: E731  (off the table: unsolvable)
+        bad = lambda hit, v: types_choice((-0.85, 0.0))  # noqa: E731  (no launch elevation: unsolvable)
         plan = plan_return(SHOTS[0][0], SHOTS[0][1], [0, 0, 0], ReturnParams(min_lead=0.6), selector=bad)
         self.assertNotIsInstance(plan, str)
         self.assertTrue(plan.info['fallback'])
@@ -103,7 +103,7 @@ class ShotSelectorTest(unittest.TestCase):
 
 def types_choice(target):
     from tt_motion.shot_selector import ShotChoice
-    return ShotChoice(BLOCK, target, (25.0,), 'test')
+    return ShotChoice(BLOCK, target, (), 'test')
 
 
 if __name__ == '__main__':

@@ -120,27 +120,29 @@ def _plan_hit(hit_ball, v_in, w_in, params, model):
     """Outgoing velocity + paddle for one hit toward params.target, or None."""
     # The paddle's friction adds spin and shifts the landing: aim again at a corrected point.
     aim = np.array(params.target, float)
-    result = None
-    for _ in range(4):
+    best, best_err = None, np.inf
+    for _ in range(8):
         sol = solve_outgoing(hit_ball, aim, params, model)
         if sol is None:
             break
         v_want, el, land, clear = sol
         n, s, v_out, w_out = paddle_for(v_in, w_in, v_want, params, model)
         land2, clear2 = first_landing(hit_ball, v_out, w_out, model)
-        result = (v_want, el, n, s, v_out, w_out, land2, clear2)
         if land2 is None:
-            break
+            d = hit_ball[:2] - aim                      # flew past the table: aim shorter
+            aim = aim + 0.25 * d / np.linalg.norm(d)
+            continue
         err = np.array(params.target) - land2[:2]
-        if np.linalg.norm(err) < 0.05:
+        e = float(np.linalg.norm(err))
+        if clear2 is not None and clear2 > params.net_top + params.ball_radius and e < best_err:
+            best, best_err = (v_want, el, n, s, v_out, w_out, land2, clear2), e
+        if e < 0.03:
             break
-        aim = aim + err
-    if result is None or result[6] is None:
-        return None
+        aim = aim + 0.7 * err   # damped: the contact spin makes the landing move ~1.3x the aim
     # accept only if the corrected aim really converged (otherwise try the next candidate)
-    if np.linalg.norm(np.array(params.target) - result[6][:2]) > 0.10:
+    if best is None or best_err > 0.10:
         return None
-    return result
+    return best
 
 
 def plan_return(p, v, w, params=None, model=None, selector=None, aim_offset=(0.0, 0.0)):
