@@ -47,6 +47,8 @@ class ReturnBallNodeSmokeTest(unittest.TestCase):
 
         class StrokePlan:
             TOPSPIN_DRIVE = 0
+            LOOP = 1
+            BLOCK = 2
 
             def __init__(s):
                 s.header = types.SimpleNamespace(stamp=None)
@@ -90,6 +92,8 @@ class ReturnBallNodeSmokeTest(unittest.TestCase):
                 p, t = p + v * 0.001, t + 0.001
             self.assertEqual(len(published), 1)
             self.assertLess(published[0].paddle_twist.linear.x, 0.0)  # swings toward the opponent
+            self.assertIn(published[0].stroke_type, (0, 1, 2))
+            self.assertLess(published[0].target_landing.x, -0.4)
         finally:
             for k, m in saved.items():
                 if m is None:

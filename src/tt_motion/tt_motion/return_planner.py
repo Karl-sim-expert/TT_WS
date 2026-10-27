@@ -1,4 +1,4 @@
-"""M3 return planner: from one ball state decide when/where to hit and how to move the paddle.
+"""M3/M4 return planner: from one ball state decide when/where to hit and how to move the paddle.
 
 Pure numpy (no ROS). Steps:
   1. predict the flight (ball_predictor) and find the first bounce on the robot half;
@@ -7,7 +7,7 @@ Pure numpy (no ROS). Steps:
   4. paddle normal / speed so that the rubber contact model (restitution, friction, as in the
      BallPhysics plugin) turns the incoming velocity into the wanted one.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -48,6 +48,8 @@ class ReturnPlan:
     w_out: np.ndarray
     landing: np.ndarray            # predicted first bounce of the returned ball
     elevation_deg: float
+    target: tuple = (-0.7, 0.0)    # landing point that was aimed at
+    stroke_type: int = 0           # StrokePlan.TOPSPIN_DRIVE / LOOP / BLOCK
     info: dict = field(default_factory=dict)
 
 
@@ -114,9 +116,40 @@ def solve_outgoing(hit_pos, target, params, model):
     return None
 
 
-def plan_return(p, v, w, params=None, model=None):
+def _plan_hit(hit_ball, v_in, w_in, params, model):
+    """Outgoing velocity + paddle for one hit toward params.target, or None."""
+    # The paddle's friction adds spin and shifts the landing: aim again at a corrected point.
+    aim = np.array(params.target, float)
+    result = None
+    for _ in range(4):
+        sol = solve_outgoing(hit_ball, aim, params, model)
+        if sol is None:
+            break
+        v_want, el, land, clear = sol
+        n, s, v_out, w_out = paddle_for(v_in, w_in, v_want, params, model)
+        land2, clear2 = first_landing(hit_ball, v_out, w_out, model)
+        result = (v_want, el, n, s, v_out, w_out, land2, clear2)
+        if land2 is None:
+            break
+        err = np.array(params.target) - land2[:2]
+        if np.linalg.norm(err) < 0.05:
+            break
+        aim = aim + err
+    if result is None or result[6] is None:
+        return None
+    # accept only if the corrected aim really converged (otherwise try the next candidate)
+    if np.linalg.norm(np.array(params.target) - result[6][:2]) > 0.10:
+        return None
+    return result
+
+
+def plan_return(p, v, w, params=None, model=None, selector=None):
     """Plan a return from the ball state (p, v, w) at observation time. Returns ReturnPlan or a
-    string with the reason it cannot be returned."""
+    string with the reason it cannot be returned.
+
+    selector(hit_ball, v_in) -> ShotChoice (M4) picks target, elevations and stroke type from the
+    predicted hit; without it the fixed params.target is used. If the chosen shot cannot be solved
+    the planner falls back to the fixed target."""
     params = params or ReturnParams()
     model = model or BallModel()
     ts, ps, vs, ws, bounces = fast_flight(p, v, w, params.flight_time, model)
@@ -140,29 +173,23 @@ def plan_return(p, v, w, params=None, model=None):
         return 'no post-bounce point inside the reachable box after the minimum lead time'
     i = best[1]
     hit_ball, v_in, w_in, t_hit = ps[i], vs[i], ws[i], float(ts[i])
-    # The paddle's friction adds spin and shifts the landing: aim again at a corrected point.
-    aim = np.array(params.target, float)
-    result = None
-    for _ in range(4):
-        sol = solve_outgoing(hit_ball, aim, params, model)
-        if sol is None:
+    choices = []
+    if selector is not None:
+        c = selector(hit_ball, v_in)
+        choices.append((tuple(c.target), c.elevations, c.stroke_type, c))
+    choices.append((tuple(params.target), params.elevations_deg, 0, None))
+    for target, elevations, stroke_type, choice in choices:
+        sub = replace(params, target=target, elevations_deg=elevations)
+        result = _plan_hit(hit_ball, v_in, w_in, sub, model)
+        if result is not None:
             break
-        v_want, el, land, clear = sol
-        n, s, v_out, w_out = paddle_for(v_in, w_in, v_want, params, model)
-        land2, clear2 = first_landing(hit_ball, v_out, w_out, model)
-        result = (v_want, el, n, s, v_out, w_out, land2, clear2)
-        if land2 is None:
-            break
-        err = np.array(params.target) - land2[:2]
-        if np.linalg.norm(err) < 0.05:
-            break
-        aim = aim + err
-    if result is None or result[6] is None:
+    if result is None:
         return 'no outgoing velocity lands on the target and clears the net'
     v_want, el, n, s, v_out, w_out, land2, clear2 = result
     paddle_pos = hit_ball - (params.ball_radius + params.paddle_half_thickness) * n
     return ReturnPlan(
         t_hit=t_hit, ball_pos=hit_ball, v_in=v_in, w_in=w_in, paddle_pos=paddle_pos,
         paddle_normal=n, paddle_speed=s, v_out=v_out, w_out=w_out,
-        landing=land2, elevation_deg=el,
-        info={'bounce_t': tb, 'v_want': v_want, 'net_clearance': clear2})
+        landing=land2, elevation_deg=el, target=target, stroke_type=stroke_type,
+        info={'bounce_t': tb, 'v_want': v_want, 'net_clearance': clear2,
+              'choice': choice, 'fallback': selector is not None and choice is None})

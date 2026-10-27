@@ -21,6 +21,7 @@ from tt_msgs.msg import StrokePlan
 
 from tt_motion.kinematics import Chain, matrix_to_quat
 from tt_motion.return_planner import ReturnParams, contact, plan_return
+from tt_motion.shot_selector import NAMES, select_shot
 from tt_motion.stroke import paddle_rotation_for
 
 READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
@@ -35,7 +36,7 @@ class ReturnBall(Node):
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 0.5),
                 ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
-                ('spin_from_odometry', False)):
+                ('spin_from_odometry', False), ('strategy', 'rules')):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))
@@ -57,7 +58,10 @@ class ReturnBall(Node):
         self.prev = None
         self.prev_vz = None
         self.landed = False
-        self.shots = self.planned = self.hits = self.returned = 0
+        self.shots = self.planned = self.hits = self.returned = self.net_fails = 0
+        self.errors = []
+        self.net_clear = None
+        self.last_pos = None
         self.get_logger().info('return_ball ready: waiting for balls from the machine')
 
     def now(self):
@@ -150,7 +154,9 @@ class ReturnBall(Node):
         self.shots += 1
         spin = w if self.get_parameter('spin_from_odometry').value else np.zeros(3)
         started = time.monotonic()
-        plan = plan_return(p, v, spin, self.params)
+        # strategy 'rules' (M4): target/stroke chosen from the predicted hit; 'fixed' (M3): target_x/y
+        selector = select_shot if self.get_parameter('strategy').value == 'rules' else None
+        plan = plan_return(p, v, spin, self.params, selector=selector)
         latency = time.monotonic() - started
         self.armed_after = t + float(self.get_parameter('cooldown').value)
         if isinstance(plan, str):
@@ -178,18 +184,25 @@ class ReturnBall(Node):
         v_p = plan.paddle_speed * plan.paddle_normal
         msg.paddle_twist.linear.x, msg.paddle_twist.linear.y, msg.paddle_twist.linear.z = \
             map(float, v_p)
-        msg.target_landing.x, msg.target_landing.y = map(float, self.params.target)
+        msg.target_landing.x, msg.target_landing.y = map(float, plan.target)
         msg.target_landing.z = 0.76
-        msg.stroke_type = StrokePlan.TOPSPIN_DRIVE
+        msg.stroke_type = int(plan.stroke_type)
         self.plan_pub.publish(msg)
         self.plan, self.plan_hit_abs, self.hit_done, self.planned = plan, hit_abs, False, self.planned + 1
         self.landed, self.prev_vz = False, None
+        self.net_clear, self.last_pos = None, None
         self.get_logger().info(
             f'shot {self.shots}: ball v={np.round(v, 2).tolist()}; hit at '
             f'{np.round(plan.ball_pos, 2).tolist()} in {remaining:.2f} s (planning took '
             f'{1000 * latency:.0f} ms wall time), paddle {plan.paddle_speed:.2f} m/s along '
             f'{np.round(plan.paddle_normal, 2).tolist()}, expected landing '
             f'{np.round(plan.landing[:2], 2).tolist()}')
+        choice = plan.info.get('choice')
+        self.get_logger().info(
+            f'SHOT {self.shots}: {NAMES.get(plan.stroke_type, "?")} to target '
+            f'({plan.target[0]:.2f}, {plan.target[1]:.2f}), launch elevation {plan.elevation_deg:.0f} deg'
+            + (f' ({choice.reason})' if choice else ' (fixed target)' if not plan.info.get('fallback')
+               else ' (selected shot not solvable: fixed target)'))
         if remaining < 0.3:
             self.get_logger().warn('very little time left: the arm may not make it')
 
@@ -214,17 +227,30 @@ class ReturnBall(Node):
             f'(planned {np.linalg.norm(want):.2f}), direction error {ang:.1f} deg')
 
     def watch_landing(self, t, p, v):
-        """First table bounce after the hit = where the returned ball lands."""
+        """First table bounce after the hit = where the returned ball lands (and net clearance)."""
+        if self.hit_done and not self.landed and self.last_pos is not None \
+                and self.last_pos[0] > 0.0 >= p[0]:
+            f = self.last_pos[0] / (self.last_pos[0] - p[0])
+            z = self.last_pos[2] + f * (p[2] - self.last_pos[2])
+            self.net_clear = z - 0.02 - self.params.net_top
+        self.last_pos = p.copy()
         if self.hit_done and not self.landed and self.prev_vz is not None \
                 and self.prev_vz < 0.0 <= v[2] and p[2] < 0.82 and v[0] < 0.0:
             self.landed = True
             on_table = abs(p[0]) <= 1.37 and abs(p[1]) <= 0.7625 and p[0] < 0.0
-            err = math.hypot(p[0] - self.params.target[0], p[1] - self.params.target[1])
+            target = self.plan.target
+            err = math.hypot(p[0] - target[0], p[1] - target[1])
             self.returned += int(on_table)
+            self.errors.append(err)
+            net_ok = self.net_clear is not None and self.net_clear > 0.0
+            self.net_fails += int(not net_ok)
             self.get_logger().info(
-                f'RESULT: landed at ({p[0]:.2f}, {p[1]:.2f}), target {self.params.target}, '
+                f'RESULT: landed at ({p[0]:.2f}, {p[1]:.2f}), target ({target[0]:.2f}, {target[1]:.2f}), '
                 f'error {100 * err:.0f} cm, {"ON opponent half" if on_table else "MISSED the table"}'
-                f' | returned {self.returned}/{self.shots} shots ({self.hits} hit)')
+                f', net {"cleared" if net_ok else "NOT cleared"}'
+                f' | returned {self.returned}/{self.shots} shots ({self.hits} hit) | '
+                f'{sum(e <= 0.15 for e in self.errors)}/{len(self.errors)} within 15 cm, '
+                f'mean {100 * float(np.mean(self.errors)):.0f} cm, net fails {self.net_fails}')
             self.plan = None
         elif t > self.plan_hit_abs + 2.0:
             what = 'paddle never touched the ball' if not self.hit_done \

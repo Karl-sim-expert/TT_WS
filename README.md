@@ -2,7 +2,7 @@
 
 ROS 2 Humble 기반 탁구 로봇 워크스페이스 (Franka Panda, Gazebo 시뮬레이션 전용).
 
-진행 상황: M0(환경), M1(탁구대·공 물리, 볼머신), M2(정지한 공 때리기) 완료. M3(날아오는 공 되받아치기) 스핀 없는 공 기준 동작 확인(WSL 11발 중 10발 상대 코트에 안착), 스핀 공은 다음 단계.
+진행 상황: M0(환경), M1(탁구대·공 물리, 볼머신), M2(정지한 공 때리기), M3(날아오는 공 되받아치기, 스핀 없는 공) 완료. M4(공 상황에 따른 목표 낙하점·구질 선택) 코드 작성, WSL 확인 대기. 스핀 공은 M5.
 
 ```bash
 cd ~/tt_ws
@@ -113,3 +113,27 @@ ros2 launch tt_bringup return_ball.launch.py
 - 라켓은 손(panda_hand) 옆에 붙어 있고 손은 충돌 모양이 있다 → 공이 원판 중심에서 손 쪽으로 4 cm 이상 벗어나 닿으면 손에 먼저 맞는다.
   그래서 `contact_shift`(기본 0.035 m)만큼 손 반대쪽으로 맞추고, 스윙 명령은 `tracking_lag` 40 ms 일찍 보낸다.
 - 터미널의 `DIAG` 줄: 라켓 위치/기울기/속도 오차, 공이 닿기 직전 실제 속도와 충돌 모델 예측 비교.
+
+## M4: 공 상황에 따라 구질·목표 낙하점 정하기 (규칙 기반)
+
+`return_ball`이 타점이 정해진 뒤 `shot_selector.select_shot`으로 구질(`StrokePlan.stroke_type`)과 목표 낙하점을 고른다 (M3는 항상 (-0.7, 0)).
+
+| 상황 (타점에서 공) | 구질 | 목표 x (깊이) | 발사 각도 후보 |
+| --- | --- | --- | --- |
+| 속도 ≥ 3.5 m/s (빠른 공) | BLOCK | -0.50 (짧게) | 25, 30, 20, 35° |
+| 높이 ≤ 0.93 m 또는 상승속도 ≥ 1.8 m/s | LOOP | -1.05 (깊게) | 35, 30, 40, 25° |
+| 높이 ≥ 1.05 m | DRIVE | -1.00 | 20, 25, 30, 15, 35° |
+| 그 외 | DRIVE | -0.85 | 위와 같음 |
+
+좌우(y)는 공이 온 쪽의 반대편으로(크로스): `y_목표 = -0.40 · clip(y_타점 / 0.3, -1, 1)`, 최대 ±0.55 m. 고른 샷이 풀리지 않으면 M3의 고정 목표로 되돌아간다.
+기준값은 `shot_selector.SelectorParams`에서 바꾼다.
+
+```bash
+ros2 launch tt_bringup return_ball.launch.py                  # strategy:=rules (기본)
+ros2 launch tt_bringup return_ball.launch.py strategy:=fixed  # M3처럼 target_x/target_y 고정
+```
+터미널에 `SHOT n: DRIVE to target (-0.85, 0.40), launch elevation 25 deg (이유)`가 나오고, `RESULT:`에 목표 대비 오차, 네트 통과 여부,
+누적 `15 cm 이내 N/M, 평균 ..., net fails K`가 나온다. 완료 기준: 오차 ≤ 15 cm, 네트 미통과(net fails) 0.
+
+오프라인 검증(ROS 불필요): `python3 src/tt_motion/test/eval_m4.py 40 6.5 1` (랜덤 볼머신 공 N발, 공 속도, 시드) —
+독립 시뮬레이션으로 되받은 공의 낙하점 오차와 네트 여유를 출력한다. 단위 테스트: `python3 -m unittest discover -s src/tt_motion/test`
