@@ -2,7 +2,7 @@
 
 ROS 2 Humble 기반 탁구 로봇 워크스페이스 (Franka Panda, Gazebo 시뮬레이션 전용).
 
-진행 상황: M0(환경) 완료, M1(탁구대·공 물리, 볼머신) 완료. M2(팔 제어, 정지한 공 때리기) 코드 작성 완료, WSL 테스트 중.
+진행 상황: M0(환경), M1(탁구대·공 물리, 볼머신), M2(정지한 공 때리기) 완료. M3(날아오는 공 되받아치기) 스핀 없는 공 기준 동작 확인(WSL 11발 중 10발 상대 코트에 안착), 스핀 공은 다음 단계.
 
 ```bash
 cd ~/tt_ws
@@ -106,3 +106,10 @@ ros2 launch tt_bringup return_ball.launch.py
 
 옵션: `machine_speed`(기본 6.0, 6 m/s 미만은 네트를 넘는 샷이 없음), `machine_period`(5.0), `machine_spin_max`(0 = 스핀 없음), `target_x`, `target_y`, `min_lead`.
 오프라인 검증(ROS 불필요): `python3 -m unittest discover -s src/tt_motion/test`
+
+### M3 참고 (WSL 실측으로 알게 된 것)
+- Gazebo odometry의 속도(twist)는 공 몸체 좌표라 쓸 수 없다 → 위치 차이로 속도를 계산한다.
+- `StrokePlan`의 자세 쿼터니언 기본값은 "회전 없음"(w=1)이다 → 노드가 라켓 방향을 항상 직접 채운다.
+- 라켓은 손(panda_hand) 옆에 붙어 있고 손은 충돌 모양이 있다 → 공이 원판 중심에서 손 쪽으로 4 cm 이상 벗어나 닿으면 손에 먼저 맞는다.
+  그래서 `contact_shift`(기본 0.035 m)만큼 손 반대쪽으로 맞추고, 스윙 명령은 `tracking_lag` 40 ms 일찍 보낸다.
+- 터미널의 `DIAG` 줄: 라켓 위치/기울기/속도 오차, 공이 닿기 직전 실제 속도와 충돌 모델 예측 비교.

@@ -32,7 +32,7 @@ class ReturnBall(Node):
         for name, default in (
                 ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
                 ('trigger_min_x', -1.55), ('contact_shift', 0.035), ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
-                ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 1.5),
+                ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 0.5),
                 ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
                 ('spin_from_odometry', False)):
@@ -87,41 +87,19 @@ class ReturnBall(Node):
             return
         else:
             return
-        if self.plan is not None:
-            self.watch_landing(t, p, v)
-            self.prev_vz = v[2]
-        elif (t >= self.armed_after and self.get_parameter('trigger_min_x').value < p[0]
-              < self.get_parameter('trigger_x').value
-              and v[0] > self.get_parameter('trigger_vx').value):
+        launched = (t >= self.armed_after and self.get_parameter('trigger_min_x').value < p[0]
+                    < self.get_parameter('trigger_x').value
+                    and v[0] > self.get_parameter('trigger_vx').value)
+        if launched:
+            if self.plan is not None:  # next shot already on its way: drop the old one
+                self.plan = None
             self.get_logger().info(
                 f'ball launched: pos {np.round(p, 2).tolist()}, v {np.round(v, 2).tolist()} '
                 f'(odometry twist says {np.round(v_odom, 2).tolist()})')
             self.on_incoming(t, p, v, w)
-
-    def on_joint_state(self, msg):
-        pos = dict(zip(msg.name, msg.position))
-        if all(n in pos for n in self.chain.joint_names):
-            tf = self.chain.fk(np.array([pos[n] for n in self.chain.joint_names]))
-            self.paddle_log.append((self.now(), tf[:3, 3].copy(), tf[:3, 2].copy()))
-
-    def diagnose(self, t_contact):
-        """Where was the paddle (joint states + FK) at the planned time and at the actual contact?"""
-        if len(self.paddle_log) < 3:
-            return
-        plan = self.plan
-        for label, t in (('planned time', self.plan_hit_abs), ('contact', t_contact)):
-            i = min(range(len(self.paddle_log)), key=lambda k: abs(self.paddle_log[k][0] - t))
-            lo, hi = max(i - 5, 0), min(i + 5, len(self.paddle_log) - 1)
-            ta, pa, _ = self.paddle_log[lo]
-            tb, pb, _ = self.paddle_log[hi]
-            vel = (pb - pa) / max(tb - ta, 1e-6)
-            _, pos, nrm = self.paddle_log[i]
-            tilt = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(nrm, plan.paddle_normal))))))
-            self.get_logger().info(
-                f'DIAG {label}: paddle pos error {1000 * np.linalg.norm(pos - plan.paddle_pos):.0f} mm '
-                f'({np.round(1000 * (pos - plan.paddle_pos), 0).tolist()}), normal error {tilt:.1f} deg, '
-                f'speed {np.linalg.norm(vel):.2f} m/s (planned {plan.paddle_speed:.2f}), '
-                f'along plan normal {float(np.dot(vel, plan.paddle_normal)):.2f} m/s')
+        elif self.plan is not None:
+            self.watch_landing(t, p, v)
+            self.prev_vz = v[2]
 
     def diagnose_ball(self, t_contact, v_out):
         """Real ball state just before the impact vs the prediction, and what the contact model says."""
@@ -213,7 +191,7 @@ class ReturnBall(Node):
     def watch_landing(self, t, p, v):
         """First table bounce after the hit = where the returned ball lands."""
         if self.hit_done and not self.landed and self.prev_vz is not None \
-                and self.prev_vz < 0.0 <= v[2] and p[2] < 0.82:
+                and self.prev_vz < 0.0 <= v[2] and p[2] < 0.82 and v[0] < 0.0:
             self.landed = True
             on_table = abs(p[0]) <= 1.37 and abs(p[1]) <= 0.7625 and p[0] < 0.0
             err = math.hypot(p[0] - self.params.target[0], p[1] - self.params.target[1])
