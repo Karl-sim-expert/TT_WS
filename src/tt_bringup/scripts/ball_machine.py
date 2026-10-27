@@ -131,6 +131,7 @@ def main_ros():
             d('start_delay', 5.0)    # [s] wait for the simulator
             d('count', 0)            # 0 = fire forever
             self.fired = 0
+            self.last_fire = None   # sim time of the previous shot
             self.pub = self.create_publisher(Twist, '/ball/launch', 10)
             self.timer = self.create_timer(self.get_parameter('start_delay').value, self.first)
 
@@ -153,6 +154,14 @@ def main_ros():
 
         def fire(self):
             g = lambda n: self.get_parameter(n).value
+            # There is one ball: a launch teleports it back to the machine. Timers on sim time fire in
+            # a burst after a simulator stall, which would cut the previous ball's flight short.
+            now = self.get_clock().now().nanoseconds * 1e-9
+            if self.last_fire is not None and now - self.last_fire < 0.8 * g('period'):
+                self.get_logger().info(
+                    f'skipped a shot: only {now - self.last_fire:.1f} s of sim time since the last one')
+                return
+            self.last_fire = now
             speed = g('speed') + random.uniform(-1, 1) * g('speed_jitter')
             for _ in range(6):
                 tx, ty, miss = self.pick_target()
