@@ -63,6 +63,13 @@ class ReturnBallNodeSmokeTest(unittest.TestCase):
                  'nav_msgs.msg': types.SimpleNamespace(Odometry=object),
                  'sensor_msgs': types.ModuleType('sensor_msgs'),
                  'sensor_msgs.msg': types.SimpleNamespace(JointState=object),
+                 'builtin_interfaces': types.ModuleType('builtin_interfaces'),
+                 'builtin_interfaces.msg': types.SimpleNamespace(Duration=lambda **kw: types.SimpleNamespace(**kw)),
+                 'trajectory_msgs': types.ModuleType('trajectory_msgs'),
+                 'trajectory_msgs.msg': types.SimpleNamespace(
+                     JointTrajectory=lambda: types.SimpleNamespace(
+                         header=types.SimpleNamespace(stamp=None), joint_names=[], points=[]),
+                     JointTrajectoryPoint=lambda: types.SimpleNamespace()),
                  'tt_msgs': types.ModuleType('tt_msgs'),
                  'tt_msgs.msg': types.SimpleNamespace(StrokePlan=StrokePlan)}
         saved = {k: sys.modules.get(k) for k in stubs}
@@ -94,6 +101,21 @@ class ReturnBallNodeSmokeTest(unittest.TestCase):
             self.assertLess(published[0].paddle_twist.linear.x, 0.0)  # swings toward the opponent
             self.assertIn(published[0].stroke_type, (0, 1, 2))
             self.assertLess(published[0].target_landing.x, -0.4)
+
+            # With a joint state the stroke is computed here and sent straight to the controller.
+            published.clear()
+            n.q = np.array(return_ball.READY)
+            p, t = np.array([-1.8, 0.0, 1.0]), t + 5.0
+            for _ in range(200):
+                Clock.t = t
+                n.subs['/model/ball/odometry'](odom(t, p))
+                p, t = p + v * 0.001, t + 0.001
+            self.assertEqual(len(published), 1)
+            traj = published[0]
+            self.assertGreater(len(traj.points), 50)
+            first = traj.points[1].time_from_start
+            self.assertGreater(first.sec + first.nanosec * 1e-9, 0.0)   # nothing of the move is in the past
+            self.assertEqual(len(traj.joint_names), 9)
         finally:
             for k, m in saved.items():
                 if m is None:

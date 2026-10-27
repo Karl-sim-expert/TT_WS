@@ -146,3 +146,10 @@ ros2 launch tt_bringup return_ball.launch.py strategy:=fixed  # M3처럼 target_
 - `collision.TableGuard`: 스트로크의 모든 순간에 팔(관절 사이 선분)은 탁구대 위 12 cm, 손(라켓 뒤 블록)과 라켓 테두리는 2 cm 이상 떠 있어야 한다. 어기면 `stroke_executor`가 `stroke would hit the table`로 거부한다 (`StrokeParams.table_guard`).
 - `return_ball`은 계획할 때 같은 스트로크 계산을 미리 돌려 보고(도달 범위, 관절 속도, 남은 시간, 탁구대), 안 되는 타점이면 다음 후보 타점(최대 5개)을 시도한다. 타점 영역은 x 1.2~1.5, y ±0.8이다. 전부 안 되면 `cannot return (no hit point works: ...)`로 이유와 함께 포기한다 (헛스윙 대신).
 - 공 속도는 6~6.5 m/s 권장: 오프라인에서 6.5 m/s는 40발 중 약 32발, 7 m/s는 약 21발만 실행 가능한 타점이 있다 (이후 공은 계획 단계에서 포기).
+
+### 스윙 타이밍 (M4)
+WSL 로그의 `DIAG swing speed`를 보면 타격 순간에 스윙 속도가 계획(1.4 m/s)에 못 미치거나(가속 중), 이미 줄어드는 중(감속 중)인 샷이 많았다.
+원인은 `stroke_executor`가 `return_ball`과 같은 스트로크 계산을 한 번 더 하느라(0.1~0.15 s) 이미 지나간 시각의 준비 동작이 잘려 나가는 것이었다.
+이제 `return_ball`이 계획 단계에서 계산한 스트로크를 그대로 컨트롤러에 보낸다(`direct_trajectory:=true`, 기본). 시작 부분의 대기 구간을 줄여
+계산에 쓴 시간을 흡수하므로 동작의 어느 부분도 과거에 놓이지 않는다. `direct_trajectory:=false`이면 예전처럼 `stroke_plan`을 `stroke_executor`로 보낸다.
+공을 못 친 경우에는 계획된 타격 시각 직후에 라켓 위치 오차(`no contact at the planned time:` + `DIAG`)를 바로 출력한다.

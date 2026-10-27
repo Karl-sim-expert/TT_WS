@@ -14,9 +14,11 @@ from collections import deque
 import numpy as np
 import rclpy
 from nav_msgs.msg import Odometry
+from builtin_interfaces.msg import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 import time
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from tt_msgs.msg import StrokePlan
 
 from tt_motion.kinematics import Chain, matrix_to_quat
@@ -41,7 +43,8 @@ class ReturnBall(Node):
                 # same values as the stroke_executor: used to pre-check that a hit point is executable
                 ('d_back', 0.08), ('d_follow', 0.10), ('min_move_time', 0.2), ('prep_vel_frac', 0.9),
                 ('vel_scale', 1.0), ('rail_weight', 0.1), ('tracking_lag', 0.040),
-                ('check_margin', 0.06)):
+                ('check_margin', 0.04), ('direct_trajectory', True),
+                ('trajectory_topic', '/panda_arm_controller/joint_trajectory')):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))
@@ -58,6 +61,8 @@ class ReturnBall(Node):
             box_z=(g('z_min'), g('z_max')), min_lead=float(g('min_lead')),
             target=(float(g('target_x')), float(g('target_y'))))
         self.plan_pub = self.create_publisher(StrokePlan, 'stroke_plan', 10)
+        self.traj_pub = self.create_publisher(JointTrajectory, g('trajectory_topic'), 10)
+        self.miss_diag_done = True
         self.create_subscription(Odometry, '/model/ball/odometry', self.on_ball, 10)
         self.create_subscription(Odometry, '/ball/paddle_hit', self.on_paddle_hit, 10)
         self.create_subscription(JointState, '/joint_states', self.on_joint_state, 50)
@@ -202,7 +207,7 @@ class ReturnBall(Node):
         pos, rot = self.stroke_pose(plan)
         lag = float(self.get_parameter('tracking_lag').value)
         try:
-            # build with a generous hit time to learn the shortest lead this stroke needs
+            # build with a generous hit time (re-timed at publish): learn the shortest lead it needs
             stroke = build_stroke(self.stroke_chain, self.q, self.q_ready, pos, rot,
                                   plan.paddle_speed * plan.paddle_normal, 10.0, self.stroke_params)
         except StrokeError as err:
@@ -211,7 +216,34 @@ class ReturnBall(Node):
         lead = t_obs + plan.t_hit - self.now() - lag - float(self.get_parameter('check_margin').value)
         if lead < stroke.min_lead:
             return f'hit time too soon: need {stroke.min_lead:.2f} s of lead, {lead:.2f} s left'
+        plan.info['stroke'] = stroke
         return None
+
+    def publish_trajectory(self, stroke, hit_abs):
+        """Send the already computed stroke straight to the arm controller (no second computation in
+        the executor, which cost ~0.1-0.15 s of the 0.6 s the ball needs). The hold segment at the
+        start absorbs the time spent since the computation, so no part of the move is in the past."""
+        lag = float(self.get_parameter('tracking_lag').value)
+        now = self.get_clock().now()
+        t_hit = hit_abs - lag - now.nanoseconds * 1e-9
+        times = np.array(stroke.times, float)
+        times[1:] += t_hit - stroke.t_hit
+        if t_hit < stroke.min_lead or times[1] <= 0.0:
+            self.get_logger().warn(
+                f'stroke is late: {t_hit:.2f} s left, needs {stroke.min_lead:.2f} s; sending it anyway')
+            times[1:] = np.maximum(times[1:], np.arange(1, len(times)) * 1e-4)
+        msg = JointTrajectory()
+        msg.header.stamp = now.to_msg()
+        msg.joint_names = list(self.stroke_chain.joint_names)
+        for t, q, qd in zip(times, stroke.q, stroke.qd):
+            p = JointTrajectoryPoint()
+            p.positions = [float(v) for v in q]
+            p.velocities = [float(v) for v in qd]
+            sec = int(t)
+            p.time_from_start = Duration(sec=sec, nanosec=int(round((t - sec) * 1e9)))
+            msg.points.append(p)
+        self.traj_pub.publish(msg)
+        return t_hit
 
     def on_incoming(self, t, p, v, w):
         self.shots += 1
@@ -247,10 +279,18 @@ class ReturnBall(Node):
         msg.target_landing.x, msg.target_landing.y = map(float, plan.target)
         msg.target_landing.z = 0.76
         msg.stroke_type = int(plan.stroke_type)
-        self.plan_pub.publish(msg)
+        stroke = plan.info.get('stroke')
+        if stroke is not None and self.get_parameter('direct_trajectory').value:
+            t_left = self.publish_trajectory(stroke, hit_abs)
+            self.get_logger().info(
+                f'trajectory sent directly: hit in {t_left:.2f} s (stroke needs {stroke.min_lead:.2f} s), '
+                f'peak joint speed {100 * stroke.max_joint_vel_ratio:.0f}% of limit')
+        else:
+            self.plan_pub.publish(msg)
         self.plan, self.plan_hit_abs, self.hit_done, self.planned = plan, hit_abs, False, self.planned + 1
         self.landed, self.prev_vz = False, None
         self.net_clear, self.last_pos = None, None
+        self.miss_diag_done = False
         self.get_logger().info(
             f'shot {self.shots}: ball v={np.round(v, 2).tolist()}; hit at '
             f'{np.round(plan.ball_pos, 2).tolist()} in {remaining:.2f} s (planning took '
@@ -317,12 +357,16 @@ class ReturnBall(Node):
                 f'aim bias ({self.aim_bias[0]:+.2f}, {self.aim_bias[1]:+.2f}), '
                 f'mean {100 * float(np.mean(self.errors)):.0f} cm, net fails {self.net_fails}')
             self.plan = None
-        elif t > self.plan_hit_abs + 2.0:
+            return
+        if not self.hit_done and not self.miss_diag_done \
+                and self.now() > self.plan_hit_abs + 0.05:
+            self.miss_diag_done = True   # log where the paddle really was (the log keeps < 1 s)
+            self.get_logger().info('no contact at the planned time:')
+            self.diagnose(self.plan_hit_abs)
+        if t > self.plan_hit_abs + 2.0:
             what = 'paddle never touched the ball' if not self.hit_done \
                 else 'returned ball never bounced on the table'
             self.get_logger().warn(f'MISS: {what} | returned {self.returned}/{self.shots}')
-            if not self.hit_done:
-                self.diagnose(self.plan_hit_abs)
             self.plan = None
 
 

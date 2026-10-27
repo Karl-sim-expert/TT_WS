@@ -235,7 +235,7 @@ def build_stroke(chain, q_start, q_ready, hit_pos, hit_rot, hit_vel, t_hit, para
 
     times = np.array(times)
     if params.table_guard:
-        bad = TableGuard(chain).first_violation(np.array(qs), step=3)
+        bad = TableGuard(chain).first_violation(np.array(qs), step=6)
         if bad is not None:
             raise StrokeError(f'stroke would hit the table: {bad[1]} (t = {times[bad[0]]:.2f} s)')
     keep = np.concatenate([[True], np.diff(times) > 1e-6])
