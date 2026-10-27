@@ -144,6 +144,27 @@ class ReturnBall(Node):
                 f'speed {np.linalg.norm(vel):.2f} m/s (planned {plan.paddle_speed:.2f}), '
                 f'along plan normal {float(np.dot(vel, plan.paddle_normal)):.2f} m/s')
 
+    def speed_profile(self, t_contact):
+        """Paddle speed along the planned normal around the contact (from joint states + FK), to see
+        whether the arm really delivers the planned swing speed at the planned time."""
+        if len(self.paddle_log) < 20:
+            return
+        log = list(self.paddle_log)
+        n = self.plan.paddle_normal
+        out = []
+        for off in (-0.060, -0.040, -0.020, 0.0, 0.020):
+            t0 = t_contact + off
+            win = [e for e in log if abs(e[0] - t0) <= 0.012]
+            if len(win) < 2:
+                out.append(f'{1000 * off:+.0f}ms: n/a')
+                continue
+            dt = win[-1][0] - win[0][0]
+            v = float(np.dot(win[-1][1] - win[0][1], n)) / dt if dt > 1e-6 else float('nan')
+            out.append(f'{1000 * off:+.0f}ms: {v:.2f}')
+        self.get_logger().info(
+            f'DIAG swing speed along the normal (planned {self.plan.paddle_speed:.2f} m/s at the hit; '
+            f'joint-state rate {(len(log) - 1) / max(log[-1][0] - log[0][0], 1e-6):.0f} Hz): ' + ', '.join(out))
+
     def diagnose_ball(self, t_contact, v_out):
         """Real ball state just before the impact vs the prediction, and what the contact model says."""
         early = [e for e in self.ball_hist if t_contact - 0.020 <= e[0] <= t_contact - 0.004]
@@ -258,6 +279,7 @@ class ReturnBall(Node):
         self.hit_done = True
         self.hits += 1
         self.diagnose(t)
+        self.speed_profile(t)
         self.diagnose_ball(t, v)
         limit = float(self.get_parameter('timing_limit').value)
         self.get_logger().info(
