@@ -25,7 +25,7 @@
   <xacro:arg name="rail_velocity" default="6.0"/>
   <xacro:arg name="rail_y_lower" default="-0.9"/>
   <xacro:arg name="rail_y_upper" default="0.9"/>
-  <xacro:arg name="rail_y_velocity" default="4.0"/>
+  <xacro:arg name="rail_y_velocity" default="6.0"/>
   <!-- rail_base: visual-only beam along y, fixed to the world (Gazebo merges it into the world), so
        the prismatic joints must hang from `world`/movable links, never from rail_base. -->
   <link name="rail_base">

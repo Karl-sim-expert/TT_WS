@@ -3,7 +3,7 @@
 default_velocity_scaling_factor: 0.3
 default_acceleration_scaling_factor: 0.3
 joint_limits:
-  rail_y_joint: {has_velocity_limits: true, max_velocity: 4.0, has_acceleration_limits: true, max_acceleration: 20.0}
+  rail_y_joint: {has_velocity_limits: true, max_velocity: 6.0, has_acceleration_limits: true, max_acceleration: 20.0}
   rail_joint: {has_velocity_limits: true, max_velocity: 6.0, has_acceleration_limits: true, max_acceleration: 20.0}
   panda_joint1: {has_velocity_limits: true, max_velocity: 2.3925, has_acceleration_limits: true, max_acceleration: 10.0}
   panda_joint2: {has_velocity_limits: true, max_velocity: 2.3925, has_acceleration_limits: true, max_acceleration: 10.0}

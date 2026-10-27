@@ -34,14 +34,14 @@ class ReturnBall(Node):
                 ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
                 ('trigger_min_x', -1.55), ('contact_shift', 0.035), ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 0.5),
-                ('x_min', 1.2), ('x_max', 1.5), ('y_min', -0.7), ('y_max', 0.7),
+                ('x_min', 1.2), ('x_max', 1.5), ('y_min', -0.8), ('y_max', 0.8),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
                 ('spin_from_odometry', False), ('strategy', 'rules'),
                 ('aim_gain', 0.7), ('aim_bias_max', 0.35),
                 # same values as the stroke_executor: used to pre-check that a hit point is executable
                 ('d_back', 0.08), ('d_follow', 0.10), ('min_move_time', 0.2), ('prep_vel_frac', 0.9),
                 ('vel_scale', 1.0), ('rail_weight', 0.1), ('tracking_lag', 0.040),
-                ('check_margin', 0.03)):
+                ('check_margin', 0.12)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))

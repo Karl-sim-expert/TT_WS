@@ -142,7 +142,7 @@ ros2 launch tt_bringup return_ball.launch.py strategy:=fixed  # M3처럼 target_
 
 ### 탁구대 관통 방지와 실행 가능한 타점만 고르기 (M4)
 시뮬레이터에는 탁구대 충돌 모양이 없어서, 이전에는 팔·레일이 탁구대를 그냥 통과할 수 있었다. 이제 다음과 같이 막는다.
-- 레일 수레는 탁구대 끝선 뒤에 둔다: 팔 기준 위치 `base_x` 1.7→1.62, `rail_joint` 하한 -0.5→0 (이에 맞춰 타점 영역 x를 1.2~1.5, M2 정지 공 기본 위치를 x=1.3으로 옮김).
-- `collision.TableGuard`: 스트로크의 모든 순간에 팔(관절 사이 선분)은 탁구대 위 8 cm, 라켓 테두리는 2 cm 이상 떠 있어야 한다. 어기면 `stroke_executor`가 `stroke would hit the table`로 거부한다 (`StrokeParams.table_guard`).
-- `return_ball`은 계획할 때 같은 스트로크 계산을 미리 돌려 보고(도달 범위, 관절 속도, 남은 시간, 탁구대), 안 되는 타점이면 다음 후보 타점(최대 5개)을 시도한다. 전부 안 되면 `cannot return (no hit point works: ...)`로 이유와 함께 포기한다 (헛스윙 대신).
+- 레일 수레는 탁구대 끝선 뒤에 둔다: 팔 기준 위치 `base_x` 1.7→1.62, `rail_joint` 하한 -0.5→0 (레일 y 속도는 4→6 m/s로 올림: 가장자리 공까지 0.5초 안에 가야 함. 이에 맞춰 타점 영역 x를 1.2~1.5, M2 정지 공 기본 위치를 x=1.3으로 옮김).
+- `collision.TableGuard`: 스트로크의 모든 순간에 팔(관절 사이 선분)은 탁구대 위 12 cm, 손(라켓 뒤 블록)과 라켓 테두리는 2 cm 이상 떠 있어야 한다. 어기면 `stroke_executor`가 `stroke would hit the table`로 거부한다 (`StrokeParams.table_guard`).
+- `return_ball`은 계획할 때 같은 스트로크 계산을 미리 돌려 보고(도달 범위, 관절 속도, 남은 시간, 탁구대), 안 되는 타점이면 다음 후보 타점(최대 5개)을 시도한다. 타점 영역은 x 1.2~1.5, y ±0.8이다. 전부 안 되면 `cannot return (no hit point works: ...)`로 이유와 함께 포기한다 (헛스윙 대신).
 - 공 속도는 6~6.5 m/s 권장: 오프라인에서 6.5 m/s는 40발 중 약 32발, 7 m/s는 약 21발만 실행 가능한 타점이 있다 (이후 공은 계획 단계에서 포기).

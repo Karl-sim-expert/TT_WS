@@ -13,7 +13,7 @@ TABLE_TOP = 0.76
 
 
 class TableGuard:
-    def __init__(self, chain, margin_xy=0.04, arm_clearance=0.08, paddle_clearance=0.02,
+    def __init__(self, chain, margin_xy=0.04, arm_clearance=0.12, paddle_clearance=0.02,
                  carriage_half=0.2, paddle_radius=0.075):
         self.chain = chain
         self.margin_xy = margin_xy
@@ -38,13 +38,21 @@ class TableGuard:
                     and abs(base[1]) < TABLE_HALF_Y + self.margin_xy + self.carriage_half):
                 return f'rail carriage reaches the table (arm base at x={base[0]:.2f}, y={base[1]:.2f})'
             origins = origins[self.i_base:]
-        pts = origins + [t[:3, 3]]
+        hand = t @ np.linalg.inv(self.chain._steps[-1][0])
+        pts = origins + [hand[:3, 3]]   # the hand itself is checked as a box below
         for a, b in zip(pts[:-1], pts[1:]):
             n = max(2, int(np.ceil(np.linalg.norm(b - a) / 0.05)) + 1)
             for s in np.linspace(0.0, 1.0, n):
                 p = a + s * (b - a)
                 if self._inside(p) and p[2] < TABLE_TOP + self.arm_clearance:
                     return f'arm link at ({p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f}) is inside the table'
+        # hand (the block behind the paddle, incl. the fingers): box corners and edge midpoints
+        for x in (-0.05, 0.0, 0.05):
+            for y in (-0.12, 0.0, 0.12):
+                for z in (-0.03, 0.05, 0.13):
+                    p = (hand @ np.array([x, y, z, 1.0]))[:3]
+                    if self._inside(p) and p[2] < TABLE_TOP + self.paddle_clearance:
+                        return f'hand at ({p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f}) is inside the table'
         # paddle disc rim
         c, nrm = t[:3, 3], t[:3, 2]
         u = np.cross(nrm, [0.0, 0.0, 1.0])
