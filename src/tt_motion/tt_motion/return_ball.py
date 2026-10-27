@@ -22,7 +22,7 @@ from tt_msgs.msg import StrokePlan
 from tt_motion.kinematics import Chain, matrix_to_quat
 from tt_motion.return_planner import ReturnParams, contact, plan_return
 from tt_motion.shot_selector import NAMES, select_shot
-from tt_motion.stroke import paddle_rotation_for
+from tt_motion.stroke import StrokeError, StrokeParams, build_stroke, paddle_rotation_for
 
 READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]
 
@@ -34,14 +34,25 @@ class ReturnBall(Node):
                 ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
                 ('trigger_min_x', -1.55), ('contact_shift', 0.035), ('target_x', -0.7), ('target_y', 0.0), ('min_lead', 0.6),
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 0.5),
-                ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
+                ('x_min', 1.2), ('x_max', 1.5), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
                 ('spin_from_odometry', False), ('strategy', 'rules'),
-                ('aim_gain', 0.7), ('aim_bias_max', 0.35)):
+                ('aim_gain', 0.7), ('aim_bias_max', 0.35),
+                # same values as the stroke_executor: used to pre-check that a hit point is executable
+                ('d_back', 0.08), ('d_follow', 0.10), ('min_move_time', 0.2), ('prep_vel_frac', 0.9),
+                ('vel_scale', 1.0), ('rail_weight', 0.1), ('tracking_lag', 0.040),
+                ('check_margin', 0.03)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))
         self.q_ready = np.array(g('q_ready'), float)
+        self.stroke_chain = Chain(g('robot_description'), tip=g('tip_link'))
+        for j in ('rail_joint', 'rail_y_joint'):
+            self.stroke_chain.set_weight_by_name(j, float(g('rail_weight')))
+        self.stroke_params = StrokeParams(
+            d_back=float(g('d_back')), d_follow=float(g('d_follow')), vel_scale=float(g('vel_scale')),
+            min_move_time=float(g('min_move_time')), prep_vel_frac=float(g('prep_vel_frac')))
+        self.q = None
         self.params = ReturnParams(
             box_x=(g('x_min'), g('x_max')), box_y=(g('y_min'), g('y_max')),
             box_z=(g('z_min'), g('z_max')), min_lead=float(g('min_lead')),
@@ -110,6 +121,7 @@ class ReturnBall(Node):
     def on_joint_state(self, msg):
         pos = dict(zip(msg.name, msg.position))
         if all(n in pos for n in self.chain.joint_names):
+            self.q = np.array([pos[n] for n in self.chain.joint_names])
             tf = self.chain.fk(np.array([pos[n] for n in self.chain.joint_names]))
             self.paddle_log.append((self.now(), tf[:3, 3].copy(), tf[:3, 2].copy()))
 
@@ -152,6 +164,30 @@ class ReturnBall(Node):
             f'DIAG ball before impact: v {np.round(v_act, 2).tolist()} (predicted {np.round(plan.v_in, 2).tolist()}){geom}; '
             f'contact model with the real v gives out {np.round(model_out, 2).tolist()}, actual out {np.round(v_out, 2).tolist()}')
 
+    def stroke_pose(self, plan):
+        """Paddle pose to command for a plan: orientation from the normal, and the contact shift.
+
+        The hand sits beside the disc on its +x' side and sticks out in front of the face: let the
+        ball meet the disc on the opposite side (timing jitter moves the contact point along the
+        ball's tangential velocity, mostly up = toward the hand)."""
+        rot = paddle_rotation_for(self.chain, self.q_ready, plan.paddle_normal)
+        pos = plan.paddle_pos + float(self.get_parameter('contact_shift').value) * rot[:, 0]
+        return pos, rot
+
+    def check_stroke(self, plan, t_obs):
+        """None if the arm can execute this hit (reach, joint speeds, lead time, table), else why not."""
+        if self.q is None:
+            return None
+        pos, rot = self.stroke_pose(plan)
+        lag = float(self.get_parameter('tracking_lag').value)
+        lead = t_obs + plan.t_hit - self.now() - lag - float(self.get_parameter('check_margin').value)
+        try:
+            build_stroke(self.stroke_chain, self.q, self.q_ready, pos, rot,
+                         plan.paddle_speed * plan.paddle_normal, lead, self.stroke_params)
+        except StrokeError as err:
+            return str(err).split(' (')[0][:90]
+        return None
+
     def on_incoming(self, t, p, v, w):
         self.shots += 1
         spin = w if self.get_parameter('spin_from_odometry').value else np.zeros(3)
@@ -159,7 +195,7 @@ class ReturnBall(Node):
         # strategy 'rules' (M4): target/stroke chosen from the predicted hit; 'fixed' (M3): target_x/y
         selector = select_shot if self.get_parameter('strategy').value == 'rules' else None
         plan = plan_return(p, v, spin, self.params, selector=selector,
-                           aim_offset=tuple(self.aim_bias))
+                           aim_offset=tuple(self.aim_bias), check=lambda pl: self.check_stroke(pl, t))
         latency = time.monotonic() - started
         self.armed_after = t + float(self.get_parameter('cooldown').value)
         if isinstance(plan, str):
@@ -174,11 +210,7 @@ class ReturnBall(Node):
         msg.hit_time.nanosec = int(round((hit_abs - int(hit_abs)) * 1e9))
         # The orientation must be set explicitly: an all-zero quaternion is not the message default
         # (w defaults to 1 = identity), so the executor would not derive it from the velocity.
-        rot = paddle_rotation_for(self.chain, self.q_ready, plan.paddle_normal)
-        # The hand sits beside the disc on its +x' side and sticks out in front of the face: let the
-        # ball meet the disc on the opposite side (timing jitter moves the contact point along the
-        # ball's tangential velocity, mostly up = toward the hand).
-        plan.paddle_pos = plan.paddle_pos + float(self.get_parameter('contact_shift').value) * rot[:, 0]
+        plan.paddle_pos, rot = self.stroke_pose(plan)
         msg.paddle_pose.position.x, msg.paddle_pose.position.y, msg.paddle_pose.position.z = \
             map(float, plan.paddle_pos)
         q = matrix_to_quat(rot)

@@ -37,12 +37,12 @@ class HitStaticBall(Node):
         super().__init__('hit_static_ball')
         for name, default in (
                 ('robot_description', ''), ('tip_link', 'paddle'), ('q_ready', READY),
-                ('ball_x', 1.15), ('ball_y', 0.0), ('ball_z', 0.95),
+                ('ball_x', 1.3), ('ball_y', 0.0), ('ball_z', 0.95),
                 ('speed', 1.0), ('elevation_deg', 25.0), ('yaw_deg', 0.0),
                 ('paddle_restitution', 0.85), ('lead', 4.0), ('repeat', 1), ('settle', 6.0),
                 # random parking: each run samples the ball uniformly in this box
                 ('random_pos', False), ('seed', 0),
-                ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
+                ('x_min', 1.2), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731

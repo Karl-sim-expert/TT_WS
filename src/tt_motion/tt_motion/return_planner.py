@@ -33,6 +33,8 @@ class ReturnParams:
     net_top: float = 0.76 + 0.1525
     net_margin: float = 0.03
     flight_time: float = 1.6
+    max_candidates: int = 5        # hit points tried when check() vetoes the best one
+    candidate_spacing: float = 0.04  # [s] minimum time between tried hit points
 
 
 @dataclass
@@ -145,14 +147,16 @@ def _plan_hit(hit_ball, v_in, w_in, params, model):
     return best
 
 
-def plan_return(p, v, w, params=None, model=None, selector=None, aim_offset=(0.0, 0.0)):
+def plan_return(p, v, w, params=None, model=None, selector=None, aim_offset=(0.0, 0.0),
+                check=None):
     """Plan a return from the ball state (p, v, w) at observation time. Returns ReturnPlan or a
     string with the reason it cannot be returned.
 
     selector(hit_ball, v_in) -> ShotChoice (M4) picks target, elevations and stroke type from the
     predicted hit; without it the fixed params.target is used. If the chosen shot cannot be solved
     the planner falls back to the fixed target. aim_offset (x, y) is added to the aimed point to
-    cancel a measured systematic landing error (the plan still reports the unshifted target)."""
+    cancel a measured systematic landing error (the plan still reports the unshifted target). check(plan) -> None or a reason string lets
+    the caller veto a hit point (e.g. the arm cannot execute it); the next best point is tried."""
     params = params or ReturnParams()
     model = model or BallModel()
     ts, ps, vs, ws, bounces = fast_flight(p, v, w, params.flight_time, model)
@@ -161,7 +165,7 @@ def plan_return(p, v, w, params=None, model=None, selector=None, aim_offset=(0.0
     if not robot_bounces:
         return 'no bounce on the robot half (ball is long, wide or short)'
     tb = robot_bounces[0]
-    best = None
+    cands = []
     for i in range(len(ts)):
         if ts[i] < max(params.min_lead, tb + 0.03):
             continue
@@ -169,13 +173,33 @@ def plan_return(p, v, w, params=None, model=None, selector=None, aim_offset=(0.0
         if not (params.box_x[0] <= x <= params.box_x[1] and params.box_y[0] <= y <= params.box_y[1]
                 and params.box_z[0] <= z <= params.box_z[1]):
             continue
-        score = abs(z - params.z_pref) + 0.2 * (ts[i] - params.min_lead)
-        if best is None or score < best[0]:
-            best = (score, i)
-    if best is None:
+        cands.append((abs(z - params.z_pref) + 0.2 * (ts[i] - params.min_lead), i))
+    if not cands:
         return 'no post-bounce point inside the reachable box after the minimum lead time'
-    i = best[1]
+    cands.sort()
+    tried, reasons = [], []
+    for _score, i in cands:
+        if any(abs(ts[i] - ts[j]) < params.candidate_spacing for j in tried):
+            continue
+        tried.append(i)
+        if len(tried) > params.max_candidates:
+            break
+        plan = _plan_at(i, ts, ps, vs, ws, tb, params, model, selector, aim_offset)
+        if isinstance(plan, str):
+            reasons.append(plan)
+            continue
+        if check is not None:
+            why = check(plan)
+            if why is not None:
+                reasons.append(f'hit at x={plan.ball_pos[0]:.2f}, y={plan.ball_pos[1]:.2f}: {why}')
+                continue
+        return plan
+    return 'no hit point works: ' + '; '.join(reasons[:3])
+
+
+def _plan_at(i, ts, ps, vs, ws, tb, params, model, selector, aim_offset):
     hit_ball, v_in, w_in, t_hit = ps[i], vs[i], ws[i], float(ts[i])
+    result = None
     choices = []
     if selector is not None:
         c = selector(hit_ball, v_in)
