@@ -201,7 +201,10 @@ def build_stroke(chain, q_start, q_ready, hit_pos, hit_rot, hit_vel, t_hit, para
     t_prep = t_back - t_move                 # slow move start
     if t_prep < params.lead_margin * 0.0 + 1e-9 and t_hit < min_lead:
         raise StrokeError(
-            f'hit time too soon: need at least {min_lead:.2f} s of lead, got {t_hit:.2f} s')
+            f'hit time too soon: need at least {min_lead:.2f} s of lead, got {t_hit:.2f} s '
+            f'(slow move {t_move:.2f} s, backswing {t1:.2f} s, largest joint change '
+            f'{np.max(np.abs(q_back - q_start)):.2f} at joint {int(np.argmax(np.abs(q_back - q_start)))}); '
+            f'q_start={np.round(q_start, 2).tolist()} q_back={np.round(q_back, 2).tolist()}')
 
     times = [0.0]
     qs = [q_start]

@@ -19,7 +19,8 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from tt_msgs.msg import StrokePlan
 
 from tt_motion.kinematics import Chain, quat_to_matrix
-from tt_motion.stroke import StrokeError, StrokeParams, build_stroke, paddle_rotation_for
+from tt_motion.stroke import (StrokeError, StrokeParams, _quintic_move, build_stroke,
+                              paddle_rotation_for)
 
 READY = [0.0, 0.0, -0.058, 0.132, 0.351, -2.048, -0.631, 1.803, 1.559]  # rail_y_joint + rail_joint + panda_joint1..7, as in tt_robot.urdf.xacro
 
@@ -38,6 +39,9 @@ class StrokeExecutor(Node):
         self.declare_parameter('rail_joint', 'rail_joint')
         self.declare_parameter('rail_y_joint', 'rail_y_joint')
         self.declare_parameter('rail_weight', 0.1)   # < 1: the rail carries the translation
+        self.declare_parameter('min_move_time', 0.5)  # shortest slow move before the backswing [s]
+        self.declare_parameter('prep_vel_frac', 0.5)  # slow moves use this fraction of the velocity limit
+        self.declare_parameter('go_ready_on_start', False)  # move to q_ready once at startup
         self.declare_parameter('d_back', 0.20)
         self.declare_parameter('d_follow', 0.15)
         self.declare_parameter('trajectory_topic', '/panda_arm_controller/joint_trajectory')
@@ -54,11 +58,15 @@ class StrokeExecutor(Node):
         self.params = StrokeParams(
             d_back=self.get_parameter('d_back').value,
             d_follow=self.get_parameter('d_follow').value,
-            vel_scale=self.get_parameter('vel_scale').value)
+            vel_scale=self.get_parameter('vel_scale').value,
+            min_move_time=self.get_parameter('min_move_time').value,
+            prep_vel_frac=self.get_parameter('prep_vel_frac').value)
 
         self.q = None
+        self.ready_done = not self.get_parameter('go_ready_on_start').value
         self.create_subscription(JointState, '/joint_states', self.on_joint_state, 10)
         self.create_subscription(StrokePlan, 'stroke_plan', self.on_plan, 10)
+        self.create_timer(1.0, self.go_ready)
         self.pub = self.create_publisher(
             JointTrajectory, self.get_parameter('trajectory_topic').value, 10)
         self.get_logger().info(
@@ -69,6 +77,35 @@ class StrokeExecutor(Node):
         pos = dict(zip(msg.name, msg.position))
         if all(n in pos for n in self.chain.joint_names):
             self.q = np.array([pos[n] for n in self.chain.joint_names])
+
+    def go_ready(self):
+        """Optional: bring the arm to q_ready once, so strokes start from the known pose."""
+        if self.ready_done or self.q is None:
+            return
+        if self.pub.get_subscription_count() == 0:
+            self.get_logger().info('waiting for the arm controller to listen on the trajectory topic')
+            return
+        self.ready_done = True
+        dq = np.abs(self.q - self.q_ready)
+        self.get_logger().info(
+            f'start pose differs from q_ready by {np.round(dq, 3).tolist()} (joints '
+            f'{", ".join(self.chain.joint_names)})')
+        if dq.max() < 0.02:
+            return
+        vlim = self.chain.vel_limit * self.params.vel_scale
+        duration = max(2.0, 4.0 * float(np.max(dq / vlim)))
+        tm, qm, qdm = _quintic_move(self.q, self.q_ready, 0.0, duration, 0.02)
+        msg = JointTrajectory()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.joint_names = list(self.chain.joint_names)
+        for t, q, qd in zip(tm, qm, qdm):
+            p = JointTrajectoryPoint()
+            p.positions = [float(v) for v in q]
+            p.velocities = [float(v) for v in qd]
+            p.time_from_start = Duration(sec=int(t), nanosec=int(round((t - int(t)) * 1e9)))
+            msg.points.append(p)
+        self.pub.publish(msg)
+        self.get_logger().info(f'moving to q_ready over {duration:.1f} s')
 
     def on_plan(self, plan):
         if self.q is None:
