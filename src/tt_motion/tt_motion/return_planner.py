@@ -143,13 +143,14 @@ def _plan_hit(hit_ball, v_in, w_in, params, model):
     return result
 
 
-def plan_return(p, v, w, params=None, model=None, selector=None):
+def plan_return(p, v, w, params=None, model=None, selector=None, aim_offset=(0.0, 0.0)):
     """Plan a return from the ball state (p, v, w) at observation time. Returns ReturnPlan or a
     string with the reason it cannot be returned.
 
     selector(hit_ball, v_in) -> ShotChoice (M4) picks target, elevations and stroke type from the
     predicted hit; without it the fixed params.target is used. If the chosen shot cannot be solved
-    the planner falls back to the fixed target."""
+    the planner falls back to the fixed target. aim_offset (x, y) is added to the aimed point to
+    cancel a measured systematic landing error (the plan still reports the unshifted target)."""
     params = params or ReturnParams()
     model = model or BallModel()
     ts, ps, vs, ws, bounces = fast_flight(p, v, w, params.flight_time, model)
@@ -179,7 +180,9 @@ def plan_return(p, v, w, params=None, model=None, selector=None):
         choices.append((tuple(c.target), c.elevations, c.stroke_type, c))
     choices.append((tuple(params.target), params.elevations_deg, 0, None))
     for target, elevations, stroke_type, choice in choices:
-        sub = replace(params, target=target, elevations_deg=elevations)
+        aim = (float(np.clip(target[0] + aim_offset[0], -1.25, -0.3)),
+               float(np.clip(target[1] + aim_offset[1], -0.65, 0.65)))
+        sub = replace(params, target=aim, elevations_deg=elevations)
         result = _plan_hit(hit_ball, v_in, w_in, sub, model)
         if result is not None:
             break

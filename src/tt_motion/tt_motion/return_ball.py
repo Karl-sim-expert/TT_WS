@@ -36,7 +36,8 @@ class ReturnBall(Node):
                 ('trigger_x', -1.0), ('trigger_vx', 2.0), ('cooldown', 0.5),
                 ('x_min', 1.0), ('x_max', 1.4), ('y_min', -0.7), ('y_max', 0.7),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
-                ('spin_from_odometry', False), ('strategy', 'rules')):
+                ('spin_from_odometry', False), ('strategy', 'rules'),
+                ('aim_gain', 0.7), ('aim_bias_max', 0.35)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))
@@ -60,6 +61,7 @@ class ReturnBall(Node):
         self.landed = False
         self.shots = self.planned = self.hits = self.returned = self.net_fails = 0
         self.errors = []
+        self.aim_bias = np.zeros(2)  # learned landing correction [m] (x, y)
         self.net_clear = None
         self.last_pos = None
         self.get_logger().info('return_ball ready: waiting for balls from the machine')
@@ -156,7 +158,8 @@ class ReturnBall(Node):
         started = time.monotonic()
         # strategy 'rules' (M4): target/stroke chosen from the predicted hit; 'fixed' (M3): target_x/y
         selector = select_shot if self.get_parameter('strategy').value == 'rules' else None
-        plan = plan_return(p, v, spin, self.params, selector=selector)
+        plan = plan_return(p, v, spin, self.params, selector=selector,
+                           aim_offset=tuple(self.aim_bias))
         latency = time.monotonic() - started
         self.armed_after = t + float(self.get_parameter('cooldown').value)
         if isinstance(plan, str):
@@ -244,18 +247,24 @@ class ReturnBall(Node):
             self.errors.append(err)
             net_ok = self.net_clear is not None and self.net_clear > 0.0
             self.net_fails += int(not net_ok)
+            # integral correction of the systematic landing error (contact model vs. real paddle)
+            gain, lim = float(self.get_parameter('aim_gain').value), float(self.get_parameter('aim_bias_max').value)
+            self.aim_bias = np.clip(self.aim_bias + gain * (np.array(target) - p[:2]), -lim, lim)
             self.get_logger().info(
                 f'RESULT: landed at ({p[0]:.2f}, {p[1]:.2f}), target ({target[0]:.2f}, {target[1]:.2f}), '
                 f'error {100 * err:.0f} cm, {"ON opponent half" if on_table else "MISSED the table"}'
                 f', net {"cleared" if net_ok else "NOT cleared"}'
                 f' | returned {self.returned}/{self.shots} shots ({self.hits} hit) | '
                 f'{sum(e <= 0.15 for e in self.errors)}/{len(self.errors)} within 15 cm, '
+                f'aim bias ({self.aim_bias[0]:+.2f}, {self.aim_bias[1]:+.2f}), '
                 f'mean {100 * float(np.mean(self.errors)):.0f} cm, net fails {self.net_fails}')
             self.plan = None
         elif t > self.plan_hit_abs + 2.0:
             what = 'paddle never touched the ball' if not self.hit_done \
                 else 'returned ball never bounced on the table'
             self.get_logger().warn(f'MISS: {what} | returned {self.returned}/{self.shots}')
+            if not self.hit_done:
+                self.diagnose(self.plan_hit_abs)
             self.plan = None
 
 

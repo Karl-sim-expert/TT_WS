@@ -28,9 +28,9 @@ class SelectorParams:
     high_z: float = 1.05            # hit height from which the ball is driven flat [m]
     low_z: float = 0.93             # hit height up to which the ball is looped [m]
     steep_vz: float = 1.8           # rising speed from which the ball is looped [m/s]
-    y_gain: float = 0.40            # cross court: target y = -y_gain * clip(y_hit / y_scale)
+    y_gain: float = 0.30            # cross court: target y = -y_gain * clip(y_hit / y_scale)
     y_scale: float = 0.3
-    y_max: float = 0.55             # largest |target y| [m] (table half width 0.7625)
+    y_max: float = 0.45             # largest |target y| [m] (table half width 0.7625)
     depth: dict = None              # stroke type -> target x [m] (negative = opponent half)
     elevations: dict = None         # stroke type -> launch elevations to try [deg]
 

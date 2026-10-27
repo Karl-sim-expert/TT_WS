@@ -125,7 +125,7 @@ ros2 launch tt_bringup return_ball.launch.py
 | 높이 ≥ 1.05 m | DRIVE | -1.00 | 20, 25, 30, 15, 35° |
 | 그 외 | DRIVE | -0.85 | 위와 같음 |
 
-좌우(y)는 공이 온 쪽의 반대편으로(크로스): `y_목표 = -0.40 · clip(y_타점 / 0.3, -1, 1)`, 최대 ±0.55 m. 고른 샷이 풀리지 않으면 M3의 고정 목표로 되돌아간다.
+좌우(y)는 공이 온 쪽의 반대편으로(크로스): `y_목표 = -0.30 · clip(y_타점 / 0.3, -1, 1)`, 최대 ±0.45 m. 고른 샷이 풀리지 않으면 M3의 고정 목표로 되돌아간다.
 기준값은 `shot_selector.SelectorParams`에서 바꾼다.
 
 ```bash
@@ -137,3 +137,5 @@ ros2 launch tt_bringup return_ball.launch.py strategy:=fixed  # M3처럼 target_
 
 오프라인 검증(ROS 불필요): `python3 src/tt_motion/test/eval_m4.py 40 6.5 1` (랜덤 볼머신 공 N발, 공 속도, 시드) —
 독립 시뮬레이션으로 되받은 공의 낙하점 오차와 네트 여유를 출력한다. 단위 테스트: `python3 -m unittest discover -s src/tt_motion/test`
+
+`return_ball`은 되받은 공의 실제 낙하점 오차를 보고 조준점을 보정한다(`aim_gain` 0.7, 최대 `aim_bias_max` 0.35 m). 라켓 접촉 모델과 실제 충돌의 체계적인 차이(WSL 첫 실측: 목표보다 약 25 cm 짧게 낙하)를 줄이기 위한 것이며, `RESULT:` 줄에 `aim bias (x, y)`로 나온다. 헛스윙(`MISS`)이면 그 시점의 라켓 위치 오차(`DIAG`)도 출력한다.

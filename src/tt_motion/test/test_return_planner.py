@@ -78,7 +78,7 @@ class ShotSelectorTest(unittest.TestCase):
         self.assertGreater(right.target[1], 0.0)
         for y in np.linspace(-0.7, 0.7, 15):
             t = select_shot([1.2, y, 0.98], [3.0, 0.0, 1.0]).target
-            self.assertLessEqual(abs(t[1]), 0.55)
+            self.assertLessEqual(abs(t[1]), 0.45)
             self.assertGreater(t[0], -1.37 + 0.25)
 
     def test_planner_hits_selected_targets(self):
