@@ -101,6 +101,31 @@ class ReturnBall(Node):
             self.watch_landing(t, p, v)
             self.prev_vz = v[2]
 
+    def on_joint_state(self, msg):
+        pos = dict(zip(msg.name, msg.position))
+        if all(n in pos for n in self.chain.joint_names):
+            tf = self.chain.fk(np.array([pos[n] for n in self.chain.joint_names]))
+            self.paddle_log.append((self.now(), tf[:3, 3].copy(), tf[:3, 2].copy()))
+
+    def diagnose(self, t_contact):
+        """Where was the paddle (joint states + FK) at the planned time and at the actual contact?"""
+        if len(self.paddle_log) < 3:
+            return
+        plan = self.plan
+        for label, t in (('planned time', self.plan_hit_abs), ('contact', t_contact)):
+            i = min(range(len(self.paddle_log)), key=lambda k: abs(self.paddle_log[k][0] - t))
+            lo, hi = max(i - 5, 0), min(i + 5, len(self.paddle_log) - 1)
+            ta, pa, _ = self.paddle_log[lo]
+            tb, pb, _ = self.paddle_log[hi]
+            vel = (pb - pa) / max(tb - ta, 1e-6)
+            _, pos, nrm = self.paddle_log[i]
+            tilt = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(nrm, plan.paddle_normal))))))
+            self.get_logger().info(
+                f'DIAG {label}: paddle pos error {1000 * np.linalg.norm(pos - plan.paddle_pos):.0f} mm '
+                f'({np.round(1000 * (pos - plan.paddle_pos), 0).tolist()}), normal error {tilt:.1f} deg, '
+                f'speed {np.linalg.norm(vel):.2f} m/s (planned {plan.paddle_speed:.2f}), '
+                f'along plan normal {float(np.dot(vel, plan.paddle_normal)):.2f} m/s')
+
     def diagnose_ball(self, t_contact, v_out):
         """Real ball state just before the impact vs the prediction, and what the contact model says."""
         early = [e for e in self.ball_hist if t_contact - 0.020 <= e[0] <= t_contact - 0.004]
