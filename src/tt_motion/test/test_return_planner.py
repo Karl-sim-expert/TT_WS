@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from tt_motion.ball_predictor import simulate  # noqa: E402
 from tt_motion.kinematics import Chain  # noqa: E402
 from tt_motion.return_planner import ReturnParams, plan_return  # noqa: E402
+from tt_motion.shot_selector import BLOCK, LOOP, TOPSPIN_DRIVE, select_shot  # noqa: E402
 from tt_motion.stroke import StrokeParams, build_stroke, paddle_rotation_for  # noqa: E402
 from urdf_utils import processed_urdf  # noqa: E402
 
@@ -54,6 +55,55 @@ class ReturnPlannerTest(unittest.TestCase):
             except Exception:  # noqa: BLE001  (StrokeError: not reachable / too soon)
                 pass
         self.assertGreaterEqual(ok, 2)
+
+
+class ShotSelectorTest(unittest.TestCase):
+    def test_rules(self):
+        fast = select_shot([1.2, 0.0, 0.98], [3.9, 0.0, 1.0])
+        self.assertEqual(fast.stroke_type, BLOCK)
+        low = select_shot([1.2, 0.0, 0.90], [3.0, 0.0, 1.0])
+        self.assertEqual(low.stroke_type, LOOP)
+        steep = select_shot([1.2, 0.0, 0.98], [2.6, 0.0, 2.2])
+        self.assertEqual(steep.stroke_type, LOOP)
+        mid = select_shot([1.2, 0.0, 0.98], [3.0, 0.0, 1.0])
+        self.assertEqual(mid.stroke_type, TOPSPIN_DRIVE)
+        high = select_shot([1.2, 0.0, 1.10], [3.0, 0.0, 0.0])
+        self.assertLess(high.target[0], mid.target[0])        # deeper than the standard drive
+        self.assertLess(fast.target[0], 0.0)
+
+    def test_cross_court_and_inside_the_table(self):
+        left = select_shot([1.2, 0.5, 0.98], [3.0, 0.0, 1.0])
+        right = select_shot([1.2, -0.5, 0.98], [3.0, 0.0, 1.0])
+        self.assertLess(left.target[1], 0.0)
+        self.assertGreater(right.target[1], 0.0)
+        for y in np.linspace(-0.7, 0.7, 15):
+            t = select_shot([1.2, y, 0.98], [3.0, 0.0, 1.0]).target
+            self.assertLessEqual(abs(t[1]), 0.45)
+            self.assertGreater(t[0], -1.37 + 0.25)
+
+    def test_planner_hits_selected_targets(self):
+        got = set()
+        for p, v in SHOTS:
+            plan = plan_return(p, v, [0, 0, 0], ReturnParams(min_lead=0.6), selector=select_shot)
+            self.assertNotIsInstance(plan, str)
+            got.add(plan.stroke_type)
+            ts, ps, _, _, bounces = simulate(plan.ball_pos, plan.v_out, plan.w_out, 1.2)
+            i = int(np.searchsorted(ts, bounces[0]))
+            self.assertLess(np.hypot(*(ps[i][:2] - np.array(plan.target))), 0.15)
+            self.assertGreater(plan.info['net_clearance'], 0.76 + 0.1525)
+        self.assertTrue(got <= {TOPSPIN_DRIVE, LOOP, BLOCK})
+
+    def test_falls_back_to_fixed_target(self):
+        bad = lambda hit, v: types_choice((-0.85, 0.0))  # noqa: E731  (no launch elevation: unsolvable)
+        plan = plan_return(SHOTS[0][0], SHOTS[0][1], [0, 0, 0], ReturnParams(min_lead=0.6), selector=bad)
+        self.assertNotIsInstance(plan, str)
+        self.assertTrue(plan.info['fallback'])
+        self.assertEqual(plan.target, (-0.7, 0.0))
+
+
+def types_choice(target):
+    from tt_motion.shot_selector import ShotChoice
+    return ShotChoice(BLOCK, target, (), 'test')
 
 
 if __name__ == '__main__':

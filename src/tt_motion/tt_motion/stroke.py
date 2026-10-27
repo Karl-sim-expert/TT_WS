@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from tt_motion.collision import TableGuard
 from tt_motion.kinematics import rotation_aligning
 
 PEAK_SMOOTH = 1.875  # max of S'(u)
@@ -58,6 +59,7 @@ class StrokeParams:
     return_pause: float = 0.1     # pause at the end of the follow-through before returning [s]
     grid_step: float = 0.01       # spacing of the IK grid along the swing line [m]
     max_retries: int = 4
+    table_guard: bool = True      # reject strokes in which the arm / rail would enter the table
 
 
 @dataclass
@@ -232,6 +234,10 @@ def build_stroke(chain, q_start, q_ready, hit_pos, hit_rot, hit_vel, t_hit, para
     qds.extend(qdr)
 
     times = np.array(times)
+    if params.table_guard:
+        bad = TableGuard(chain).first_violation(np.array(qs), step=6)
+        if bad is not None:
+            raise StrokeError(f'stroke would hit the table: {bad[1]} (t = {times[bad[0]]:.2f} s)')
     keep = np.concatenate([[True], np.diff(times) > 1e-6])
     return Stroke(
         times=times[keep], q=np.array(qs)[keep], qd=np.array(qds)[keep], hit_speed=s,

@@ -2,7 +2,7 @@
 
 ROS 2 Humble 기반 탁구 로봇 워크스페이스 (Franka Panda, Gazebo 시뮬레이션 전용).
 
-진행 상황: M0(환경), M1(탁구대·공 물리, 볼머신), M2(정지한 공 때리기) 완료. M3(날아오는 공 되받아치기) 스핀 없는 공 기준 동작 확인(WSL 11발 중 10발 상대 코트에 안착), 스핀 공은 다음 단계.
+진행 상황: M0(환경), M1(탁구대·공 물리, 볼머신), M2(정지한 공 때리기), M3(날아오는 공 되받아치기, 스핀 없는 공) 완료. M4(공 상황에 따른 목표 낙하점·구질 선택) 코드 작성, WSL 확인 대기. 스핀 공은 M5.
 
 ```bash
 cd ~/tt_ws
@@ -55,7 +55,7 @@ ros2 launch tt_bringup sim.launch.py ball_machine:=true machine_period:=3.0 mach
 
 ## M2: 정지한 공 때리기
 
-로봇은 Panda 팔이 **타구 방향(x축) 레일** 위에 올라간 구조다 (`rail_joint`, 범위 -0.5~0.6 m, 속도 4 m/s). 레일이 빠른 직선 이동을, 팔이 라켓 각도를 맡는다.
+로봇은 Panda 팔이 **타구 방향(x축) 레일** 위에 올라간 구조다 (`rail_joint`, 범위 0~0.6 m, 속도 4 m/s; 레일 수레가 탁구대(끝선 x=1.37)와 겹치지 않도록 하한 0, 기준 위치 x=1.62). 레일이 빠른 직선 이동을, 팔이 라켓 각도를 맡는다.
 Panda만 쓰면 정면 타구 시 공 속도가 1.2 m/s가 한계였고, 레일을 달면 오프라인 계산으로 평평한 타구 약 6.9 m/s, 위로 25° 약 5.9 m/s까지 가능하다 (위로 40°는 약 3.4 m/s, 팔 관절이 병목).
 
 설치(최초 1회): `sudo apt install ros-humble-moveit`
@@ -71,7 +71,7 @@ ros2 launch tt_bringup static_hit.launch.py
 | --- | --- | --- |
 | `speed` | `5.0` | 요청하는 공 속도 [m/s] (관절 속도 한계에 걸리면 자동으로 낮춘다) |
 | `elevation_deg` / `yaw_deg` | `25` / `0` | 공을 보낼 방향 (위로 각도 / 좌우 각도) |
-| `ball_x` `ball_y` `ball_z` | `1.15 0 0.95` | 공을 멈춰 둘 위치 [m] |
+| `ball_x` `ball_y` `ball_z` | `1.3 0 0.95` | 공을 멈춰 둘 위치 [m] |
 | `vel_scale` | `1.0` | 모든 관절(레일 4 m/s, Panda 2.4~2.9 rad/s) 속도 한계 배율. 1보다 크면 시뮬레이션 전용 가상 팔 |
 | `repeat` | `1` | 반복 횟수 (끝에 평균/최대 오차 요약) |
 | `lead` | `4.0` | 계획 후 타격까지 시간 [s] |
@@ -79,10 +79,10 @@ ros2 launch tt_bringup static_hit.launch.py
 예: `ros2 launch tt_bringup static_hit.launch.py speed:=3.0 elevation_deg:=30 repeat:=5`
 
 공 위치를 매 반복마다 무작위로: `ros2 launch tt_bringup static_hit.launch.py repeat:=10 random_pos:=true`
-(기본 범위 x∈[1.0,1.4], y∈[-0.7,0.7] (Y 레일로 탁구대 폭 전체), z∈[0.85,1.15] — 5 m/s 타격이 도달 가능한 영역. `seed:=42`로 재현,
+(기본 범위 x∈[1.2,1.4], y∈[-0.7,0.7] (Y 레일로 탁구대 폭 전체), z∈[0.85,1.15] — 5 m/s 타격이 도달 가능한 영역. `seed:=42`로 재현,
 `x_min`/`x_max`/`y_min`/… 로 범위 변경)
 
-- 공은 시작할 때 볼머신 위치에 멈춰 있다가 `fire_ball.sh` / 볼머신이 쏠 때만 움직인다. 위치 지정: `tools/hold_ball.sh 1.15 0 0.95`
+- 공은 시작할 때 볼머신 위치에 멈춰 있다가 `fire_ball.sh` / 볼머신이 쏠 때만 움직인다. 위치 지정: `tools/hold_ball.sh 1.3 0 0.95`
 - 라켓-공 충돌은 엔진 접촉이 아니라 `BallPhysics` 플러그인이 해석적으로 계산한다 (반발계수 0.85, 마찰 0.45).
 - 라켓에 맞을 때마다 `/ball/paddle_hit`(nav_msgs/Odometry)가 나온다: 시각, 위치, 맞은 직후 속도·스핀.
 - MoveIt (선택): `ros2 launch tt_bringup sim.launch.py moveit:=true` 후 `ros2 launch tt_moveit_config move_group.launch.py rviz:=true` (RViz2 MotionPlanning).
@@ -113,3 +113,43 @@ ros2 launch tt_bringup return_ball.launch.py
 - 라켓은 손(panda_hand) 옆에 붙어 있고 손은 충돌 모양이 있다 → 공이 원판 중심에서 손 쪽으로 4 cm 이상 벗어나 닿으면 손에 먼저 맞는다.
   그래서 `contact_shift`(기본 0.035 m)만큼 손 반대쪽으로 맞추고, 스윙 명령은 `tracking_lag` 40 ms 일찍 보낸다.
 - 터미널의 `DIAG` 줄: 라켓 위치/기울기/속도 오차, 공이 닿기 직전 실제 속도와 충돌 모델 예측 비교.
+
+## M4: 공 상황에 따라 구질·목표 낙하점 정하기 (규칙 기반)
+
+`return_ball`이 타점이 정해진 뒤 `shot_selector.select_shot`으로 구질(`StrokePlan.stroke_type`)과 목표 낙하점을 고른다 (M3는 항상 (-0.7, 0)).
+
+| 상황 (타점에서 공) | 구질 | 목표 x (깊이) | 발사 각도 후보 |
+| --- | --- | --- | --- |
+| 속도 ≥ 3.5 m/s (빠른 공) | BLOCK | -0.50 (짧게) | 25, 30, 20, 35° |
+| 높이 ≤ 0.93 m 또는 상승속도 ≥ 1.8 m/s | LOOP | -1.05 (깊게) | 35, 30, 40, 25° |
+| 높이 ≥ 1.05 m | DRIVE | -1.00 | 20, 25, 30, 15, 35° |
+| 그 외 | DRIVE | -0.85 | 위와 같음 |
+
+좌우(y)는 공이 온 쪽의 반대편으로(크로스): `y_목표 = -0.30 · clip(y_타점 / 0.3, -1, 1)`, 최대 ±0.45 m. 고른 샷이 풀리지 않으면 M3의 고정 목표로 되돌아간다.
+기준값은 `shot_selector.SelectorParams`에서 바꾼다.
+
+```bash
+ros2 launch tt_bringup return_ball.launch.py                  # strategy:=rules (기본)
+ros2 launch tt_bringup return_ball.launch.py strategy:=fixed  # M3처럼 target_x/target_y 고정
+```
+터미널에 `SHOT n: DRIVE to target (-0.85, 0.40), launch elevation 25 deg (이유)`가 나오고, `RESULT:`에 목표 대비 오차, 네트 통과 여부,
+누적 `15 cm 이내 N/M, 평균 ..., net fails K`가 나온다. 완료 기준: 오차 ≤ 15 cm, 네트 미통과(net fails) 0.
+
+오프라인 검증(ROS 불필요): `python3 src/tt_motion/test/eval_m4.py 40 6.5 1` (랜덤 볼머신 공 N발, 공 속도, 시드) —
+독립 시뮬레이션으로 되받은 공의 낙하점 오차와 네트 여유를 출력한다. 단위 테스트: `python3 -m unittest discover -s src/tt_motion/test`
+
+`return_ball`은 되받은 공의 실제 낙하점 오차를 보고 조준점을 보정한다(`aim_gain` 0.7, 최대 `aim_bias_max` 0.35 m). 라켓 접촉 모델과 실제 충돌의 체계적인 차이(WSL 첫 실측: 목표보다 약 25 cm 짧게 낙하)를 줄이기 위한 것이며, `RESULT:` 줄에 `aim bias (x, y)`로 나온다. 헛스윙(`MISS`)이면 그 시점의 라켓 위치 오차(`DIAG`)도 출력한다.
+
+### 탁구대 관통 방지와 실행 가능한 타점만 고르기 (M4)
+시뮬레이터에는 탁구대 충돌 모양이 없어서, 이전에는 팔·레일이 탁구대를 그냥 통과할 수 있었다. 이제 다음과 같이 막는다.
+- 레일 수레는 탁구대 끝선 뒤에 둔다: 팔 기준 위치 `base_x` 1.7→1.62, `rail_joint` 하한 -0.5→0 (레일 y 속도는 4→6 m/s로 올림: 가장자리 공까지 0.5초 안에 가야 함. 이에 맞춰 타점 영역 x를 1.2~1.5, M2 정지 공 기본 위치를 x=1.3으로 옮김).
+- `collision.TableGuard`: 스트로크의 모든 순간에 팔(관절 사이 선분)은 탁구대 위 12 cm, 손(라켓 뒤 블록)과 라켓 테두리는 2 cm 이상 떠 있어야 한다. 어기면 `stroke_executor`가 `stroke would hit the table`로 거부한다 (`StrokeParams.table_guard`).
+- `return_ball`은 계획할 때 같은 스트로크 계산을 미리 돌려 보고(도달 범위, 관절 속도, 남은 시간, 탁구대), 안 되는 타점이면 다음 후보 타점(최대 5개)을 시도한다. 타점 영역은 x 1.2~1.5, y ±0.8이다. 전부 안 되면 `cannot return (no hit point works: ...)`로 이유와 함께 포기한다 (헛스윙 대신).
+- 공 속도는 6~6.5 m/s 권장: 오프라인에서 6.5 m/s는 40발 중 약 32발, 7 m/s는 약 21발만 실행 가능한 타점이 있다 (이후 공은 계획 단계에서 포기).
+
+### 스윙 타이밍 (M4)
+WSL 로그의 `DIAG swing speed`를 보면 타격 순간에 스윙 속도가 계획(1.4 m/s)에 못 미치거나(가속 중), 이미 줄어드는 중(감속 중)인 샷이 많았다.
+원인은 `stroke_executor`가 `return_ball`과 같은 스트로크 계산을 한 번 더 하느라(0.1~0.15 s) 이미 지나간 시각의 준비 동작이 잘려 나가는 것이었다.
+이제 `return_ball`이 계획 단계에서 계산한 스트로크를 그대로 컨트롤러에 보낸다(`direct_trajectory:=true`, 기본). 시작 부분의 대기 구간을 줄여
+계산에 쓴 시간을 흡수하므로 동작의 어느 부분도 과거에 놓이지 않는다. `direct_trajectory:=false`이면 예전처럼 `stroke_plan`을 `stroke_executor`로 보낸다.
+공을 못 친 경우에는 계획된 타격 시각 직후에 라켓 위치 오차(`no contact at the planned time:` + `DIAG`)를 바로 출력한다.

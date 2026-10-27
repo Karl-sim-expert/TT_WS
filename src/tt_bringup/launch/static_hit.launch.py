@@ -53,7 +53,7 @@ def generate_launch_description():
         # Multiplier on all joint velocity limits (X rail 6 m/s, Y rail 4 m/s, Panda 2.4-2.9 rad/s). 1.0 = as built;
         # >1 is a sim-only 'virtual arm' for stronger hits.
         DeclareLaunchArgument('vel_scale', default_value='1.0'),
-        DeclareLaunchArgument('ball_x', default_value='1.15'),
+        DeclareLaunchArgument('ball_x', default_value='1.3'),
         DeclareLaunchArgument('ball_y', default_value='0.0'),
         DeclareLaunchArgument('ball_z', default_value='0.95'),
         DeclareLaunchArgument('speed', default_value='5.0'),          # requested ball speed [m/s]
@@ -65,7 +65,7 @@ def generate_launch_description():
         # random each launch). The default box is where the 5 m/s hit is reachable.
         DeclareLaunchArgument('random_pos', default_value='false'),
         DeclareLaunchArgument('seed', default_value='0'),
-        DeclareLaunchArgument('x_min', default_value='1.0'),
+        DeclareLaunchArgument('x_min', default_value='1.2'),
         DeclareLaunchArgument('x_max', default_value='1.4'),
         DeclareLaunchArgument('y_min', default_value='-0.7'),
         DeclareLaunchArgument('y_max', default_value='0.7'),

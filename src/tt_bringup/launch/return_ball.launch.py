@@ -1,4 +1,6 @@
-"""M3 demo: ball machine fires, the robot predicts the ball and returns it (ground-truth ball state).
+"""M3/M4 demo: ball machine fires, the robot predicts the ball and returns it (ground-truth ball state).
+M4: the stroke type and the landing target are chosen from the incoming ball (strategy:=rules);
+strategy:=fixed returns every ball to target_x/target_y as in M3.
 
   ros2 launch tt_bringup return_ball.launch.py
   ros2 launch tt_bringup return_ball.launch.py machine_speed:=6.0 machine_period:=5.0 target_x:=-0.7
@@ -48,7 +50,8 @@ def generate_launch_description():
     returner = Node(
         package='tt_motion', executable='return_ball', output='screen',
         parameters=[{'robot_description': robot_description, 'use_sim_time': True, 'target_x': num('target_x'),
-                     'target_y': num('target_y'), 'min_lead': num('min_lead')}])
+                     'target_y': num('target_y'), 'min_lead': num('min_lead'), 'vel_scale': num('vel_scale'),
+                     'strategy': LaunchConfiguration('strategy')}])
 
     return LaunchDescription([
         DeclareLaunchArgument('rviz', default_value='true'),
@@ -58,7 +61,9 @@ def generate_launch_description():
         DeclareLaunchArgument('machine_spin_max', default_value='0.0'),   # start without spin
         DeclareLaunchArgument('machine_period', default_value='5.0'),
         DeclareLaunchArgument('machine_x_min', default_value='0.9'),
-        # Where the returned ball should land (opponent half, x < 0)
+        # 'rules' = M4 stroke/target selection from the incoming ball, 'fixed' = always target_x/target_y
+        DeclareLaunchArgument('strategy', default_value='rules'),
+        # Fixed target for strategy:=fixed (opponent half, x < 0)
         DeclareLaunchArgument('target_x', default_value='-0.7'),
         DeclareLaunchArgument('target_y', default_value='0.0'),
         DeclareLaunchArgument('min_lead', default_value='0.6'),           # s after launch

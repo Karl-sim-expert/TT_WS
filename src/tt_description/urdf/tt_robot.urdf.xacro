@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!-- Panda arm + paddle, ros2_control (gz_ros2_control, Gazebo Fortress). -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tt_robot">
-  <xacro:arg name="base_x" default="1.7"/>
+  <xacro:arg name="base_x" default="1.62"/>
   <xacro:arg name="base_y" default="0.0"/>
   <!-- base_z: arm base height on a pedestal next to the table end (0.6 m = 16 cm below the table top,
        which keeps both low balls and ~0.4 m-above-table balls inside the workspace). -->
@@ -19,12 +19,13 @@
        rail_y_joint = rail_joint = 0 is the nominal base position (base_x, base_y); positive x
        moves the base away from the table. Visual only (the ball never touches the rails);
        effort/velocity limits are sim values. -->
-  <xacro:arg name="rail_lower" default="-0.5"/>
+  <!-- rail_lower 0: the carriage (0.4 m wide) must stay behind the table end line (x = 1.37) -->
+  <xacro:arg name="rail_lower" default="0.0"/>
   <xacro:arg name="rail_upper" default="0.6"/>
   <xacro:arg name="rail_velocity" default="6.0"/>
   <xacro:arg name="rail_y_lower" default="-0.9"/>
   <xacro:arg name="rail_y_upper" default="0.9"/>
-  <xacro:arg name="rail_y_velocity" default="4.0"/>
+  <xacro:arg name="rail_y_velocity" default="6.0"/>
   <!-- rail_base: visual-only beam along y, fixed to the world (Gazebo merges it into the world), so
        the prismatic joints must hang from `world`/movable links, never from rail_base. -->
   <link name="rail_base">
