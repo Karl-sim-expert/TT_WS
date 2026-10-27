@@ -37,11 +37,11 @@ class ReturnBall(Node):
                 ('x_min', 1.2), ('x_max', 1.5), ('y_min', -0.8), ('y_max', 0.8),
                 ('z_min', 0.85), ('z_max', 1.15), ('timing_limit', 0.010),
                 ('spin_from_odometry', False), ('strategy', 'rules'),
-                ('aim_gain', 0.7), ('aim_bias_max', 0.35),
+                ('aim_gain', 0.2), ('aim_bias_max', 0.2),
                 # same values as the stroke_executor: used to pre-check that a hit point is executable
                 ('d_back', 0.08), ('d_follow', 0.10), ('min_move_time', 0.2), ('prep_vel_frac', 0.9),
                 ('vel_scale', 1.0), ('rail_weight', 0.1), ('tracking_lag', 0.040),
-                ('check_margin', 0.12)):
+                ('check_margin', 0.06)):
             self.declare_parameter(name, default)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.chain = Chain(g('robot_description'), tip=g('tip_link'))
@@ -180,12 +180,16 @@ class ReturnBall(Node):
             return None
         pos, rot = self.stroke_pose(plan)
         lag = float(self.get_parameter('tracking_lag').value)
-        lead = t_obs + plan.t_hit - self.now() - lag - float(self.get_parameter('check_margin').value)
         try:
-            build_stroke(self.stroke_chain, self.q, self.q_ready, pos, rot,
-                         plan.paddle_speed * plan.paddle_normal, lead, self.stroke_params)
+            # build with a generous hit time to learn the shortest lead this stroke needs
+            stroke = build_stroke(self.stroke_chain, self.q, self.q_ready, pos, rot,
+                                  plan.paddle_speed * plan.paddle_normal, 10.0, self.stroke_params)
         except StrokeError as err:
             return str(err).split(' (')[0][:90]
+        # Time is read AFTER the (slow) stroke computation: the clock keeps running meanwhile.
+        lead = t_obs + plan.t_hit - self.now() - lag - float(self.get_parameter('check_margin').value)
+        if lead < stroke.min_lead:
+            return f'hit time too soon: need {stroke.min_lead:.2f} s of lead, {lead:.2f} s left'
         return None
 
     def on_incoming(self, t, p, v, w):
